@@ -1,0 +1,38 @@
+image: python:3.6.10-slim
+
+stages:
+    - build
+    - test
+
+cache:
+    paths:
+      - .cache/pip
+
+install_dependencies:
+    stage: build
+    script:
+        - apt update
+        - apt install -y wget bzip2 make gcc
+        - wget -O nuttcp.tar.bz2 http://nuttcp.net/nuttcp/nuttcp-8.1.4.tar.bz2
+        - tar -xvf nuttcp.tar.bz2
+        - cd nuttcp-8.1.4; make
+    artifacts:
+        paths:
+            - nuttcp-8.1.4/nuttcp-8.1.4
+
+test:
+    stage: test
+    script: 
+        - cp nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
+        - pip install -r agent/requirements.txt
+        - python agent/test.py
+
+build_image:
+    dependencies: []
+    tags: 
+        - build_docker
+    script:
+        - echo "$REGI_PASS" | docker login -u "$REGI_USER" --password-stdin
+        - docker build -t icair/dtnaas:agent .
+        - docker run -t icair/dtnaas:agent agent/test.py
+        - docker push icair/dtnaas:agent
