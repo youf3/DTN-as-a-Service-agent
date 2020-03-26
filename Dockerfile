@@ -11,5 +11,6 @@ COPY agent /agent
 
 RUN pip install -r /agent/requirements.txt
 
+EXPOSE 5000
 ENTRYPOINT [ "python"]
 CMD ["agent/app.py"]
