@@ -63,7 +63,7 @@ class AgentTest(TestCase):
 
         response = self.client.get('/nuttcp/5001/poll', json=data)
         result = response.get_json()        
-        assert result == 0
+        assert result == {'return code' : 0}
 
         with open(os.path.join(self.tmpdirname.name, 'hello_world2'), 'r') as fp:
             contents = fp.readlines()

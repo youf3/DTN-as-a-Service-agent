@@ -92,7 +92,7 @@ def poll(tool, port):
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     retcode = target_tool_cls.poll_progress(target_tool_cls.running_cli_threads, port)
-    return jsonify(retcode)
+    return jsonify({'return code' : retcode})
 
 @app.route('/sender/<tool>', methods=['POST'])
 def run_sender(tool):
