@@ -47,6 +47,6 @@ build_image:
     before_script:
         - docker stop daas_agent|| true
     script:
-        - docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --rm -d icair/dtnaas:agent
+        - docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --network="host" --rm -d icair/dtnaas:agent
 
 include: 'CI/.gitlab-ci-servers.yml'
