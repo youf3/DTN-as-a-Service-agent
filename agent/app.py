@@ -87,11 +87,17 @@ def check_running():
 def get_transfer_tools():    
     return jsonify(tools)
 
-@app.route('/<string:tool>/<int:port>/poll')
-def poll(tool, port):
+@app.route('/<string:tool>/<int:port>/<string:node>/poll')
+def poll(tool, port, node):
+    logging.debug('polling {} {} port {} '.format(node, tool, port))
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
-    retcode = target_tool_cls.poll_progress(target_tool_cls.running_cli_threads, port)
+    if node == 'sender':
+        retcode = target_tool_cls.poll_progress(target_tool_cls.running_svr_threads, port)
+    elif node == 'receiver':
+        retcode = target_tool_cls.poll_progress(target_tool_cls.running_cli_threads, port)
+    else:
+        abort(make_response(jsonify(message="Only sender and receiver is allowed"), 400))
     return jsonify({'return code' : retcode})
 
 @app.route('/sender/<tool>', methods=['POST'])
