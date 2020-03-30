@@ -44,28 +44,29 @@ class AgentTest(TestCase):
         assert 'nuttcp' in result
 
     def test_sendfile_nuttcp(self):
-        data = {
-            'port' : 5001,
-            'file' : 'hello_world',
-            'dport' : 6001,
+        data = {            
+            'file' : 'hello_world',            
             'direct' : False
         }        
         response = self.client.post('/sender/nuttcp', json=data)
         result = response.get_json()
-        assert result['result'] == True
+        assert result.pop('result') == True
 
-        data['file'] = 'hello_world2'
-        data['address'] = '127.0.0.1'
+        result['file'] = 'hello_world2'
+        result['address'] = '127.0.0.1'
+        result['direct'] = False
 
-        response = self.client.post('/receiver/nuttcp', json=data)
+        response = self.client.post('/receiver/nuttcp', json=result)
         result = response.get_json()
-        assert result['result'] == True
+        assert result.pop('result') == True
 
-        response = self.client.get('/nuttcp/5001/receiver/poll', json=data)
+        cport = result.pop('cport')        
+
+        response = self.client.get('/nuttcp/{}/receiver/poll'.format(cport), json=data)
         result = response.get_json()        
         assert result == {'return code' : 0}
 
-        response = self.client.get('/nuttcp/5001/sender/poll', json=data)
+        response = self.client.get('/nuttcp/{}/sender/poll'.format(cport), json=data)
         result = response.get_json()        
         assert result == {'return code' : 0}
 

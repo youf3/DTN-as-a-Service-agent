@@ -30,6 +30,8 @@ test:
 
 build_image:
     stage: build
+    only:
+        - master
     tags: 
         - build_docker
     script:
@@ -40,7 +42,8 @@ build_image:
 
 .deploy_image:
     stage: deploy
-
+    only:
+        - master
     variables:
         VOLS_TO_MOUNT: -v /data/disk8:/data/disk8 -v /data/disk9:/data/disk9 -v /data/disk10:/data/disk10 -v /data/disk11:/data/disk11 -v /data/disk12:/data/disk12 -v /data/disk13:/data/disk13 -v /data/disk14:/data/disk14 -v /data/disk15:/data/disk15
 
@@ -48,6 +51,6 @@ build_image:
         - docker stop daas_agent|| true
         - docker pull icair/dtnaas:agent
     script:
-        - docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --network="host" --rm -d icair/dtnaas:agent
+        - docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --network="host" --rm -d icair/dtnaas:agent    
 
 include: 'CI/.gitlab-ci-servers.yml'

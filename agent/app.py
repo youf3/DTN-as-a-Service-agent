@@ -93,9 +93,9 @@ def poll(tool, port, node):
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     if node == 'sender':
-        retcode = target_tool_cls.poll_progress(target_tool_cls.running_svr_threads, port)
+        retcode = target_tool_cls.poll_progress(target_tool_cls.running_svr_threads, port, **{'node' : node})
     elif node == 'receiver':
-        retcode = target_tool_cls.poll_progress(target_tool_cls.running_cli_threads, port)
+        retcode = target_tool_cls.poll_progress(target_tool_cls.running_cli_threads, port, **{'node' : node})
     else:
         abort(make_response(jsonify(message="Only sender and receiver is allowed"), 400))
     return jsonify({'return code' : retcode})
@@ -105,10 +105,9 @@ def run_sender(tool):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
 
     data = request.get_json()
-    if not('port' in data and 'file' in data):
-        abort(make_response(jsonify(message="port and/or data is not found" + target_module), 400))
+    if not 'file' in data:
+        abort(make_response(jsonify(message="file path is not found from request" + target_module), 400))
 
-    port = data.pop('port')    
     filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
 
     # find the module for a tool and instantiate it
@@ -118,21 +117,18 @@ def run_sender(tool):
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     tool_obj = target_tool_cls()
 
-    ret = tool_obj.run_sender(port, filename, **data)
-    if not ret:
+    ret = tool_obj.run_sender(filename, **data)
+    if not ret['result']:
         abort(make_response(jsonify(message="failed to run" + tool), 400))
     
-    return jsonify({'result': True})
+    return jsonify(ret)
 
 @app.route('/receiver/<tool>', methods=['POST'])
 def run_receiver(tool):
     if tool not in tools: abort(404)
 
-    data = request.get_json()
-    if not('port' in data and 'file' in data):
-        abort(make_response(jsonify(message="port and/or data is not found" + target_module), 400))
+    data = request.get_json()    
 
-    port = data.pop('port')
     filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
     address = data.pop('address')    
 
@@ -143,11 +139,11 @@ def run_receiver(tool):
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     tool_obj = target_tool_cls()
 
-    ret = tool_obj.run_receiver(address, port, filename, **data)
+    ret = tool_obj.run_receiver(address, filename, **data)
     if not ret:
-        abort(make_response(jsonify(message="failed to run" + tool), 400))
+        abort(make_response(jsonify(message="failed to run " + tool), 400))
     
-    return jsonify({'result': True})
+    return jsonify(ret)
 
 if __name__ == '__main__':
     load_config()    
