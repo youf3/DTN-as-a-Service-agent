@@ -60,19 +60,26 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result.pop('result') == True
 
-        cport = result.pop('cport')        
+        cport = result.pop('cport')
 
-        response = self.client.get('/nuttcp/{}/receiver/poll'.format(cport), json=data)
+        data = {
+            'node' : 'receiver',
+            'port' : cport
+        }
+
+        response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
         assert result == {'return code' : 0}
 
-        response = self.client.get('/nuttcp/{}/sender/poll'.format(cport), json=data)
+        data['node'] = 'sender'
+        response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
         assert result == {'return code' : 0}
 
-        response = self.client.get('/nuttcp/5001/something/poll', json=data)
+        data['node'] = 'something'
+        response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
-        assert result == {'message' : 'Only sender and receiver is allowed'}
+        assert result == {'return code' : -1}
 
         with open(os.path.join(self.tmpdirname.name, 'hello_world2'), 'r') as fp:
             contents = fp.readlines()
