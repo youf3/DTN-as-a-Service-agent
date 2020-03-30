@@ -102,7 +102,7 @@ def poll(tool, port, node):
 
 @app.route('/sender/<tool>', methods=['POST'])
 def run_sender(tool):
-    if tool not in tools: abort(404)
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
 
     data = request.get_json()
     if not('port' in data and 'file' in data):
