@@ -2,6 +2,7 @@ import os
 import stat
 import logging
 import sys
+import traceback
 from libs.TransferTools import TransferTools
 
 logging.getLogger().setLevel(logging.DEBUG)
@@ -94,8 +95,12 @@ def poll(tool):
     logging.debug('polling {} {}'.format(data['node'], tool))
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
-    retcode = target_tool_cls.poll_progress(**data)    
-    return jsonify({'return code' : retcode})
+    try:
+        retcode = target_tool_cls.poll_progress(**data)
+        return jsonify({'return code' : retcode})
+    except Exception:
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+    
 
 @app.route('/sender/<tool>', methods=['POST'])
 def run_sender(tool):
@@ -136,9 +141,10 @@ def run_receiver(tool):
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     tool_obj = target_tool_cls()
 
-    ret = tool_obj.run_receiver(address, filename, **data)
-    if not ret:
-        abort(make_response(jsonify(message="failed to run " + tool), 400))
+    try:
+        ret = tool_obj.run_receiver(address, filename, **data)
+    except Exception:
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
     
     return jsonify(ret)
 

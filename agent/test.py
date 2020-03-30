@@ -78,8 +78,9 @@ class AgentTest(TestCase):
 
         data['node'] = 'something'
         response = self.client.get('/nuttcp/poll', json=data)
+        assert response.status_code == 400
         result = response.get_json()        
-        assert result == {'return code' : -1}
+        assert result == {'message' : 'Exception: Node has to be either sender or receiver'}
 
         with open(os.path.join(self.tmpdirname.name, 'hello_world2'), 'r') as fp:
             contents = fp.readlines()

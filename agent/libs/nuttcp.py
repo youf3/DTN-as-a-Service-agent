@@ -30,10 +30,10 @@ class nuttcp(TransferTools):
     def run_receiver(self, address, dstfile, **optional_args):
         if 'cport' not in optional_args:
             logging.error('cport number not found')
-            return -1
+            raise Exception('Control port not found')
         if 'dport' not in optional_args:
             logging.error('dport number not found')
-            return -1
+            raise Exception('Data port not found')
         
         logging.debug('running nuttcp receiver on address {} file {} cport {} dport {}'.format(address, dstfile, optional_args['cport'], optional_args['dport']))        
 
@@ -56,10 +56,10 @@ class nuttcp(TransferTools):
     def poll_progress(cls, **optional_args):
         if not 'port' in optional_args:
             logging.error('Port not found')
-            return -1
+            raise Exception('Port not found')
         elif not 'node' in optional_args:
             logging.error('Node not found')
-            return -1
+            raise Exception('Node not found')            
             
         port = optional_args.pop('port')        
         
@@ -78,6 +78,6 @@ class nuttcp(TransferTools):
             proc.communicate(timeout=None)
         else:
             logging.error('Node has to be either sender or receiver')
-            return -1
+            raise Exception('Node has to be either sender or receiver')
             
         return proc.returncode
