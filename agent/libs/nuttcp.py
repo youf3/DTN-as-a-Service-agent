@@ -54,27 +54,27 @@ class nuttcp(TransferTools):
 
     @classmethod
     def poll_progress(cls, **optional_args):
-        if not 'port' in optional_args:
-            logging.error('Port not found')
-            raise Exception('Port not found')
+        if not 'cport' in optional_args:
+            logging.error('Control port not found')
+            raise Exception('Control port not found')
         elif not 'node' in optional_args:
             logging.error('Node not found')
             raise Exception('Node not found')            
             
-        port = optional_args.pop('port')        
+        cport = optional_args.pop('cport')        
         
         if optional_args['node'] == 'sender':
             threads = nuttcp.running_svr_threads
             logging.debug('threads: ' + str(threads))            
-            proc = threads[port][0]
+            proc = threads[cport][0]
             proc.communicate(timeout=None)
-            completed_thread = threads.pop(port)
-            nuttcp.cports.append(port)
+            completed_thread = threads.pop(cport)
+            nuttcp.cports.append(cport)
             nuttcp.dports.append(completed_thread[1])
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
             logging.debug('threads: ' + str(threads))
-            proc = nuttcp.running_cli_threads[port][0]
+            proc = nuttcp.running_cli_threads[cport][0]
             proc.communicate(timeout=None)
         else:
             logging.error('Node has to be either sender or receiver')

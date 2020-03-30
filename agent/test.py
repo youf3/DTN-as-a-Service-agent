@@ -64,7 +64,7 @@ class AgentTest(TestCase):
 
         data = {
             'node' : 'receiver',
-            'port' : cport
+            'cport' : cport
         }
 
         response = self.client.get('/nuttcp/poll', json=data)
