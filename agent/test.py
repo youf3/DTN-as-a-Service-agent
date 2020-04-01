@@ -107,5 +107,42 @@ class AgentTest(TestCase):
         transfer_counter = get_prom_metric('daas_agent_num_transfers 0.0', data)
         assert transfer_counter == '0.0'
 
+    def test_sendfile_nuttcp_numa(self):
+        data = {            
+            'file' : 'hello_world',            
+            'direct' : False,
+            'numa_scheme' : 2,
+            'numa_node' : 0
+        }        
+        response = self.client.post('/sender/nuttcp', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True        
+
+        result['file'] = 'hello_world2'
+        result['address'] = '127.0.0.1'
+        result['direct'] = False
+
+        response = self.client.post('/receiver/nuttcp', json=result)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        cport = result.pop('cport')
+
+        data = {
+            'node' : 'receiver',
+            'cport' : cport,
+            'numa_scheme' : 3,
+            'numa_node' : 1
+        }
+
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()        
+        assert result == {'return code' : 0}
+
+        data['node'] = 'sender'
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()        
+        assert result == {'return code' : 0}
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

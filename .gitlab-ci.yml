@@ -5,27 +5,32 @@ stages:
     - test
     - deploy
 
-cache:
-    paths:
-      - .cache/pip
-
 install_dependencies:
     stage: build
     script:
         - apt update
-        - apt install -y wget bzip2 make gcc
+        - apt install -y wget bzip2 make gcc libnuma-dev
         - wget -O nuttcp.tar.bz2 http://nuttcp.net/nuttcp/nuttcp-8.1.4.tar.bz2
         - tar -xvf nuttcp.tar.bz2
-        - cd nuttcp-8.1.4; make
+        - cd nuttcp-8.1.4; make; cd ..
+        - pip install numa
+        - cp -r /root/.cache ./
+        - ls -la
+        - pwd
+        
     artifacts:
         paths:
+            - .cache
             - nuttcp-8.1.4/nuttcp-8.1.4
 
 test:
     stage: test
-    script: 
+    before_script:
         - cp nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
+        - cp -r .cache /root/
+        - apt update; apt install -y libnuma-dev
         - pip install -r agent/requirements.txt
+    script:         
         - python agent/test.py
 
 build_image:

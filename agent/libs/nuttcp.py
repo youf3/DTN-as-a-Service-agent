@@ -25,6 +25,8 @@ class nuttcp(TransferTools):
         logging.debug(cmd)        
         proc = subprocess.Popen(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
         nuttcp.running_svr_threads[cport] = [proc, dport]
+        if 'numa_node' in optional_args:
+            super().bind_proc_to_numa(proc, optional_args['numa_node'])
         return {'cport' : cport, 'dport': dport, 'result': True}
 
     def run_receiver(self, address, dstfile, **optional_args):
@@ -49,6 +51,8 @@ class nuttcp(TransferTools):
         cmd = 'nuttcp -r -i 1 -P {} -p {}{} -l8m --nofork {} > {}'.format(cport, dport, filemode, address, dstfile)
         logging.debug(cmd)
         proc = subprocess.Popen(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
+        if 'numa_node' in optional_args:
+            super().bind_proc_to_numa(proc, optional_args['numa_node'])
         nuttcp.running_cli_threads[cport] = [proc, dport]
         return {'cport' : cport, 'dport': dport, 'result': True}
 

@@ -4,6 +4,7 @@ import logging
 import sys
 import traceback
 from libs.TransferTools import TransferTools
+from libs.Schemes import NumaScheme
 
 logging.getLogger().setLevel(logging.DEBUG)
 from flask import Flask, abort, jsonify, request, make_response
@@ -34,8 +35,7 @@ def import_submodules(package, recursive=True):
     return results
 
 loaded_modules = import_submodules('libs', False)
-tools = [x.__name__ for x in TransferTools.__subclasses__()]    
-running_p = []
+tools = [x.__name__ for x in TransferTools.__subclasses__()]
 
 def load_config():
     try: app.config.from_envvar('CONF_FILE')
@@ -99,7 +99,7 @@ def get_transfer_tools():
 labels={'status': lambda r: r.status_code})
 @metrics.gauge('daas_agent_num_transfers', 'Number of transfers waiting to be finished')
 def poll(tool):
-    data = request.get_json()    
+    data = request.get_json()
     
     logging.debug('polling {} {}'.format(data['node'], tool))
     target_module = [x for x in loaded_modules if tool in x]    
@@ -127,7 +127,11 @@ def run_sender(tool):
     if len(target_module) > 1 :
         abort(make_response(jsonify(message="Duplicated transfer tool name" + target_module), 400))
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
-    tool_obj = target_tool_cls()
+    
+    if 'numa_scheme' in data:
+        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'])
+    else:
+        tool_obj = target_tool_cls()
 
     ret = tool_obj.run_sender(filename, **data)
     if not ret['result']:
@@ -152,6 +156,11 @@ def run_receiver(tool):
         abort(make_response(jsonify(message="Duplicated transfer tool name" + target_module), 400))
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     tool_obj = target_tool_cls()
+
+    if 'numa_scheme' in data:
+        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'])
+    else:
+        tool_obj = target_tool_cls()
 
     try:
         ret = tool_obj.run_receiver(address, filename, **data)
