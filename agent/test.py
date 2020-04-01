@@ -10,6 +10,9 @@ def create_temp_file(tmpdir):
         fp.write('Hello world!')
         fp.close()
 
+def get_prom_metric(metric_name, in_text, index = 0):
+    return [x.split(' ')[1] for x in in_text.splitlines() if metric_name in x][index]
+
 class AgentTest(TestCase):
 
     def create_app(self):
@@ -52,6 +55,12 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result.pop('result') == True
 
+        # check prom metric for sender
+        response = self.client.get('/metrics')
+        data = response.data.decode()
+        sender_counter = get_prom_metric('daas_agent_sender_total{status="200"}', data)
+        assert sender_counter == '1.0'
+
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
         result['direct'] = False
@@ -59,6 +68,12 @@ class AgentTest(TestCase):
         response = self.client.post('/receiver/nuttcp', json=result)
         result = response.get_json()
         assert result.pop('result') == True
+
+        # check prom metric for receiver
+        response = self.client.get('/metrics')
+        data = response.data.decode()
+        receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
+        assert receiver_counter == '1.0'
 
         cport = result.pop('cport')
 
@@ -85,6 +100,12 @@ class AgentTest(TestCase):
         with open(os.path.join(self.tmpdirname.name, 'hello_world2'), 'r') as fp:
             contents = fp.readlines()
         assert contents == ['Hello world!']
+
+        # check prom metric for transfer
+        response = self.client.get('/metrics')
+        data = response.data.decode()
+        transfer_counter = get_prom_metric('daas_agent_num_transfers 0.0', data)
+        assert transfer_counter == '0.0'
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
