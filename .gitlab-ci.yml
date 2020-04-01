@@ -15,8 +15,6 @@ install_dependencies:
         - cd nuttcp-8.1.4; make; cd ..
         - pip install numa
         - cp -r /root/.cache ./
-        - ls -la
-        - pwd
         
     artifacts:
         paths:
