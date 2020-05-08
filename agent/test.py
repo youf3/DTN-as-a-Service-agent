@@ -79,17 +79,18 @@ class AgentTest(TestCase):
 
         data = {
             'node' : 'receiver',
-            'cport' : cport
+            'cport' : cport,
+            'dstfile' : 'hello_world2'
         }
 
         response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
-        assert result == {'return code' : 0}
+        assert result == [0, 12]
 
         data['node'] = 'sender'
         response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
-        assert result == {'return code' : 0}
+        assert result == 0
 
         data['node'] = 'something'
         response = self.client.get('/nuttcp/poll', json=data)
@@ -132,17 +133,18 @@ class AgentTest(TestCase):
             'node' : 'receiver',
             'cport' : cport,
             'numa_scheme' : 3,
-            'numa_node' : 1
+            'numa_node' : 1,
+            'dstfile' : 'hello_world2'
         }
 
         response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
-        assert result == {'return code' : 0}
+        assert result == [0,12]
 
         data['node'] = 'sender'
         response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
-        assert result == {'return code' : 0}
+        assert result == 0
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

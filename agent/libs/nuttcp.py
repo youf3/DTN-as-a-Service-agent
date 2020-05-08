@@ -1,7 +1,7 @@
 from libs.TransferTools import TransferTools
 import subprocess
 import logging
-import sys
+import sys, os
 
 class nuttcp(TransferTools):
     running_svr_threads = {}
@@ -27,7 +27,7 @@ class nuttcp(TransferTools):
         nuttcp.running_svr_threads[cport] = [proc, dport]
         if 'numa_node' in optional_args:
             super().bind_proc_to_numa(proc, optional_args['numa_node'])
-        return {'cport' : cport, 'dport': dport, 'result': True}
+        return {'cport' : cport, 'dport': dport, 'size' : os.path.getsize(srcfile), 'result': True}
 
     def run_receiver(self, address, dstfile, **optional_args):
         if 'cport' not in optional_args:
@@ -75,13 +75,13 @@ class nuttcp(TransferTools):
             completed_thread = threads.pop(cport)
             nuttcp.cports.append(cport)
             nuttcp.dports.append(completed_thread[1])
+            return proc.returncode
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
             logging.debug('threads: ' + str(threads))
             proc = nuttcp.running_cli_threads[cport][0]
             proc.communicate(timeout=None)
+            return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
         else:
             logging.error('Node has to be either sender or receiver')
-            raise Exception('Node has to be either sender or receiver')
-            
-        return proc.returncode
+            raise Exception('Node has to be either sender or receiver')        

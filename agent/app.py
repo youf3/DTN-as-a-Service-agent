@@ -100,13 +100,16 @@ labels={'status': lambda r: r.status_code})
 @metrics.gauge('daas_agent_num_transfers', 'Number of transfers waiting to be finished')
 def poll(tool):
     data = request.get_json()
+
+    if 'dstfile' in data:
+        data['dstfile'] = os.path.join(app.config['FILE_LOC'], data['dstfile'])
     
     logging.debug('polling {} {}'.format(data['node'], tool))
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)    
-    try:
+    try:        
         retcode = target_tool_cls.poll_progress(**data)
-        return jsonify({'return code' : retcode})
+        return jsonify(retcode)
     except Exception:
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
