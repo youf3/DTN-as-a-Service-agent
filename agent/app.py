@@ -149,9 +149,12 @@ def run_sender(tool):
 
     data = request.get_json()
     if not 'file' in data:
-        abort(make_response(jsonify(message="file path is not found from request" + target_module), 400))
+        abort(make_response(jsonify(message="file path is not found from request"), 400))
 
     filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
+
+    if not os.path.exists(filename): 
+        abort(make_response(jsonify(message="file is not found"), 404))
 
     # find the module for a tool and instantiate it
     target_module = [x for x in loaded_modules if tool in x]
