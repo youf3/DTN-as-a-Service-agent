@@ -1,4 +1,4 @@
-import os
+import os, glob
 import stat
 import logging
 import sys
@@ -17,6 +17,8 @@ metrics.info('app_info', 'Agent service for StarLight DTN-as-a-Service')
 
 import importlib
 import pkgutil
+
+MAX_FIO_JOBS=4000
 
 def import_submodules(package, recursive=True):
     """ Import all submodules of a module, recursively, including subpackages
@@ -74,21 +76,22 @@ def get_files(dirname):
 
     return contents
 
-def prepare_file(filename, size):
-    write_global=not os.path.exists('agent/scripts/files.fio')
+def prepare_file(jobname, filename, size):
+    write_global=not os.path.exists(jobname)
         
-    with open('agent/scripts/files.fio', 'a') as fh:
+    with open(jobname, 'a') as fh:
         if write_global:
             fh.writelines('[global]\nname=fio-seq-write\nrw=write\nbs=1m\ndirect=1\nnumjobs=1\nioengine=libaio\niodepth=16\nthread=1\ngroup_reporting=1\n\n')
         option = '[{0}]\nsize={1}\nfilename={0}\n\n'.format(filename, size)
         fh.writelines(option)
 
-def commit_write():
-    with open('agent/scripts/files.fio') as fh:
-        logging.debug('Writing file using FIO job')
-        logging.debug(''.join(fh.readlines()))
-    ret_code = subprocess.run(['fio', 'agent/scripts/files.fio'])    
-    os.remove('agent/scripts/files.fio')
+def commit_write(jobs):
+    for job in jobs:
+        with open(job) as fh:
+            logging.debug('Writing file using FIO job')
+            logging.debug(''.join(fh.readlines()))
+        ret_code = subprocess.run(['fio', job])    
+        os.remove(job)
     return ret_code
 
 @app.route('/files/', defaults={'path': ''})
@@ -104,12 +107,33 @@ def list_files(path):
 
 @app.route('/create_file/', methods=['POST'])
 def create_file():
-    param = request.get_json()    
+
+    fio_job_files = glob.glob("agent/scripts/*.fio")
+    for fn in fio_job_files:
+        os.remove(fn)
+
+    param = request.get_json()
+    file_cnt = 0
+    fio_job_num = 0
+    jobs = []
+
     for file_spec in param:
+        job_file = os.path.join('agent/scripts/' , 'files{}.fio'.format(fio_job_num))
         if 'size' not in param[file_spec]:
             abort(make_response(jsonify(message='filename and size are required'), 400))
-        prepare_file(os.path.join(app.config['FILE_LOC'] , file_spec), param[file_spec]['size'])
-    ret = commit_write()
+
+        prepare_file(job_file, os.path.join(app.config['FILE_LOC'] , file_spec), param[file_spec]['size'])
+
+        file_cnt += 1
+        if file_cnt > MAX_FIO_JOBS:
+            fio_job_num += 1
+            file_cnt = 0
+            jobs.append(job_file)
+
+    if job_file not in jobs:
+        jobs.append(job_file)
+
+    ret = commit_write(jobs)
     return jsonify(ret.returncode)
 
 @app.route('/')

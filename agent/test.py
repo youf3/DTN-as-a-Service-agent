@@ -54,6 +54,15 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result == 0 
 
+    def test_create_many_files(self):
+        num_files = 5000        
+        data = {}
+        
+        for i in range(num_files):
+            data['file{}'.format(i)] = {'size' : '1M'}            
+        response = self.client.post('/create_file/',json=data)
+        result = response.get_json()
+
     def test_get_tools(self):
         response = self.client.get('/tools')
         result = response.get_json()
