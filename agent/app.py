@@ -18,7 +18,7 @@ metrics.info('app_info', 'Agent service for StarLight DTN-as-a-Service')
 import importlib
 import pkgutil
 
-MAX_FIO_JOBS=4000
+MAX_FIO_JOBS=400
 
 def import_submodules(package, recursive=True):
     """ Import all submodules of a module, recursively, including subpackages

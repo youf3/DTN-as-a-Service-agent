@@ -55,7 +55,7 @@ class AgentTest(TestCase):
         assert result == 0 
 
     def test_create_many_files(self):
-        num_files = 5000        
+        num_files = 500        
         data = {}
         
         for i in range(num_files):
