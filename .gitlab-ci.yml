@@ -26,7 +26,7 @@ test:
     before_script:
         - cp nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
         - cp -r .cache /root/
-        - apt update; apt install -y libnuma-dev
+        - apt update; apt install -y libnuma-dev fio
         - pip install -r agent/requirements.txt
     script:         
         - python agent/test.py

@@ -6,7 +6,7 @@ RUN tar -xvf nuttcp.tar.bz2; cd nuttcp-8.1.4; make
 RUN pip install numa
 
 FROM python:3.6.10-slim
-RUN apt update; apt install -y numactl
+RUN apt update; apt install -y numactl fio
 COPY --from=build /nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
 COPY --from=build /root/.cache /root/.cache
 

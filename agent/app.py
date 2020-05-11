@@ -2,6 +2,7 @@ import os
 import stat
 import logging
 import sys
+import subprocess
 import traceback
 from libs.TransferTools import TransferTools
 from libs.Schemes import NumaScheme
@@ -73,6 +74,23 @@ def get_files(dirname):
 
     return contents
 
+def prepare_file(filename, size):
+    write_global=not os.path.exists('agent/scripts/files.fio')
+        
+    with open('agent/scripts/files.fio', 'a') as fh:
+        if write_global:
+            fh.writelines('[global]\nname=fio-seq-write\nrw=write\nbs=1m\ndirect=1\nnumjobs=1\nioengine=libaio\niodepth=16\nthread=1\ngroup_reporting=1\n\n')
+        option = '[{0}]\nsize={1}\nfilename={0}\n\n'.format(filename, size)
+        fh.writelines(option)
+
+def commit_write():
+    with open('agent/scripts/files.fio') as fh:
+        logging.debug('Writing file using FIO job')
+        logging.debug(''.join(fh.readlines()))
+    ret_code = subprocess.run(['fio', 'agent/scripts/files.fio'])    
+    os.remove('agent/scripts/files.fio')
+    return ret_code
+
 @app.route('/files/', defaults={'path': ''})
 @app.route('/files/<path:path>')
 def list_files(path):
@@ -83,6 +101,16 @@ def list_files(path):
     except FileNotFoundError:
         abort(404)
     return jsonify(contents)
+
+@app.route('/create_file/', methods=['POST'])
+def create_file():
+    param = request.get_json()    
+    for file_spec in param:
+        if 'size' not in param[file_spec]:
+            abort(make_response(jsonify(message='filename and size are required'), 400))
+        prepare_file(os.path.join(app.config['FILE_LOC'] , file_spec), param[file_spec]['size'])
+    ret = commit_write()
+    return jsonify(ret.returncode)
 
 @app.route('/')
 @metrics.do_not_track()

@@ -41,6 +41,19 @@ class AgentTest(TestCase):
         assert result[0]['name'] == 'hello_world'
         assert result[0]['size'] == 12
 
+    def test_create_file(self):
+        data = {
+            'hello_world' : {                
+                'size' : '100M'
+            },
+            'hello_world2' : {
+                'size' : '100M'
+            }
+        }  
+        response = self.client.post('/create_file/', json=data)
+        result = response.get_json()
+        assert result == 0 
+
     def test_get_tools(self):
         response = self.client.get('/tools')
         result = response.get_json()
