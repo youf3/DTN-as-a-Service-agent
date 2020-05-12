@@ -54,7 +54,7 @@ build_image:
         - docker stop daas_agent|| true
         - docker pull icair/dtnaas:agent
     script:
-        - cid=$(docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --network="host" --rm -d icair/dtnaas:agent)
+        - cid=$(docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --network="host" --log-opt max-size=50m --rm -d icair/dtnaas:agent)
         - sleep 1
         - docker inspect -f '{{.State.Running}}' $cid
 
