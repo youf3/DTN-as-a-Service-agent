@@ -40,7 +40,7 @@ build_image:
     script:
         - echo "$REGI_PASS" | docker login --username "$REGI_USER" --password-stdin
         - docker build -t icair/dtnaas:agent .
-        - docker run -t icair/dtnaas:agent agent/test.py
+        - docker run --privileged -t icair/dtnaas:agent agent/test.py
         - docker push icair/dtnaas:agent
 
 .deploy_image:

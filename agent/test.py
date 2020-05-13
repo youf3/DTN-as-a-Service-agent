@@ -171,5 +171,10 @@ class AgentTest(TestCase):
         result = response.get_json()        
         assert result == 0
 
+    def test_ping(self):
+        response = self.client.get('/ping/127.0.0.1')
+        result = float(response.get_json()['latency'])
+        assert result is not None
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

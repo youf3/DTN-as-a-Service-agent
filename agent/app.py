@@ -4,6 +4,7 @@ import logging
 import sys
 import subprocess
 import traceback
+import ping3
 from libs.TransferTools import TransferTools
 from libs.Schemes import NumaScheme
 
@@ -163,6 +164,14 @@ def delete_file(path):
 @metrics.do_not_track()
 def check_running():
     return "The agent is running"
+
+@app.route('/ping/<string:dst_ip>')
+@metrics.do_not_track()
+def ping_host(dst_ip):
+    logging.debug('pinging {}'.format(dst_ip))
+    delay = ping3.ping(dst_ip)
+    logging.debug('latency {}'.format(delay))
+    return {'latency' : delay}
 
 @app.route('/tools')
 @metrics.do_not_track()
