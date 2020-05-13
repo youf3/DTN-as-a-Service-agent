@@ -90,7 +90,7 @@ def commit_write(jobs):
         with open(job) as fh:
             logging.debug('Writing file using FIO job')
             logging.debug(''.join(fh.readlines()))
-        ret_code = subprocess.run(['fio', job])    
+        ret_code = subprocess.run(['fio', job], stderr=subprocess.PIPE, stdout=subprocess.PIPE)    
         os.remove(job)
     return ret_code
 
