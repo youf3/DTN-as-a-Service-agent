@@ -160,6 +160,13 @@ def delete_file(path):
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
     return ""
 
+@app.route('/trim', methods=['GET'])
+@metrics.counter('daas_agent_trim', 'Number of time NVME trim issued')
+def trim():
+    proc = subprocess.run(['fstrim', '-va'])
+    return {'returncode' : proc.returncode}
+
+
 @app.route('/')
 @metrics.do_not_track()
 def check_running():
