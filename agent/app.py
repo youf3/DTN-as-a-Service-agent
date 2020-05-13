@@ -96,6 +96,7 @@ def commit_write(jobs):
 
 @app.route('/files/', defaults={'path': ''})
 @app.route('/files/<path:path>')
+@metrics.do_not_track()
 def list_files(path):
     try:
         contents = get_files(os.path.join(app.config['FILE_LOC'], path))
@@ -106,6 +107,7 @@ def list_files(path):
     return jsonify(contents)
 
 @app.route('/create_file/', methods=['POST'])
+@metrics.counter('daas_agent_file_create', 'Number of files created')
 def create_file():
 
     fio_job_files = glob.glob("agent/scripts/*.fio")
@@ -135,6 +137,27 @@ def create_file():
 
     ret = commit_write(jobs)
     return jsonify(ret.returncode)
+
+@app.route('/file/<path:path>', methods=['DELETE'])
+@metrics.counter('daas_agent_file_delete', 'Number of files deleted')
+def delete_file(path):
+
+    #TODO : check user permission
+    
+    #convert abs path to relpath
+    if os.path.isabs(path):
+        path = path[1:]
+
+    filepath = os.path.join(app.config['FILE_LOC'], path)
+
+    if not os.path.exists(filepath): 
+        abort(make_response(jsonify(message="Cannot find the specified file {}".format(filepath)), 400))
+
+    try:
+        os.remove(filepath)
+    except Exception:
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+    return ""
 
 @app.route('/')
 @metrics.do_not_track()

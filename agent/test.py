@@ -54,6 +54,9 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result == 0 
 
+        response = self.client.delete('file/hello_world')        
+        assert response.status_code == 200
+
     def test_create_many_files(self):
         num_files = 500        
         data = {}
