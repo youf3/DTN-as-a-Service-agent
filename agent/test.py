@@ -66,6 +66,9 @@ class AgentTest(TestCase):
         response = self.client.post('/create_file/',json=data)
         result = response.get_json()
 
+        response = self.client.delete('/file/*')
+        result = response.get_json()
+
     def test_get_tools(self):
         response = self.client.get('/tools')
         result = response.get_json()

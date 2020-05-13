@@ -151,14 +151,22 @@ def delete_file(path):
 
     filepath = os.path.join(app.config['FILE_LOC'], path)
 
-    if not os.path.exists(filepath): 
-        abort(make_response(jsonify(message="Cannot find the specified file {}".format(filepath)), 400))
+    if path == '*':
+        files = glob.glob(app.config['FILE_LOC'] + '/**/*', recursive=True)
+        for fname in files:
+            if os.path.isfile(fname):
+                os.remove(fname)
+        return ""
 
-    try:
-        os.remove(filepath)
-    except Exception:
-        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
-    return ""
+    else:
+        if not os.path.exists(filepath): 
+            abort(make_response(jsonify(message="Cannot find the specified file {}".format(filepath)), 400))
+
+        try:
+            os.remove(filepath)
+        except Exception:
+            abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+        return ""
 
 @app.route('/trim', methods=['GET'])
 @metrics.counter('daas_agent_trim', 'Number of time NVME trim issued')
