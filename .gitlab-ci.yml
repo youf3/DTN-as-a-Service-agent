@@ -1,61 +1,10 @@
-image: python:3.6.10-slim
-
+image: gcr.io/kaniko-project/executor:debug
+   
 stages:
-    - build
-    - test
-    - deploy
-
-install_dependencies:
-    stage: build
-    script:
-        - apt update
-        - apt install -y wget bzip2 make gcc libnuma-dev
-        - wget -O nuttcp.tar.bz2 http://nuttcp.net/nuttcp/nuttcp-8.1.4.tar.bz2
-        - tar -xvf nuttcp.tar.bz2
-        - cd nuttcp-8.1.4; make; cd ..
-        - pip install numa
-        - cp -r /root/.cache ./
-        
-    artifacts:
-        paths:
-            - .cache
-            - nuttcp-8.1.4/nuttcp-8.1.4
-
-test:
-    stage: test
-    before_script:
-        - cp nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
-        - cp -r .cache /root/
-        - apt update; apt install -y libnuma-dev fio
-        - pip install -r agent/requirements.txt
-    script:         
-        - python agent/test.py
-
-build_image:
-    stage: build
-    only:
-        - master
-    tags: 
-        - build_docker
-    script:
-        - echo "$REGI_PASS" | docker login --username "$REGI_USER" --password-stdin
-        - docker build -t icair/dtnaas:agent .
-        - docker run --privileged -t icair/dtnaas:agent agent/test.py
-        - docker push icair/dtnaas:agent
-
-.deploy_image:
-    stage: deploy
-    only:
-        - master
-    variables:
-        VOLS_TO_MOUNT: -v /data/disk8:/data/disk8 -v /data/disk9:/data/disk9 -v /data/disk10:/data/disk10 -v /data/disk11:/data/disk11 -v /data/disk12:/data/disk12 -v /data/disk13:/data/disk13 -v /data/disk14:/data/disk14 -v /data/disk15:/data/disk15
-
-    before_script:
-        - docker stop daas_agent|| true
-        - docker pull icair/dtnaas:agent
-    script:
-        - cid=$(docker run --name=daas_agent --privileged $VOLS_TO_MOUNT --network="host" --log-opt max-size=50m --rm -d icair/dtnaas:agent)
-        - sleep 1
-        - docker inspect -f '{{.State.Running}}' $cid
-
-include: 'CI/.gitlab-ci-servers.yml'
+  - build-and-push
+   
+build-and-push-job:
+  stage: build-and-push
+  script:
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --cache=true --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile --destination $CI_REGISTRY_IMAGE:${CI_COMMIT_SHA:0:8} --destination $CI_REGISTRY_IMAGE:latest
