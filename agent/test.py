@@ -33,13 +33,19 @@ class AgentTest(TestCase):
         assert result is not None
         assert result == b'The agent is running'
 
-    def test_listfile(self):        
+    def test_listfile(self): 
+        data = {
+            'test2/hello_world' : {                
+                'size' : '1M'
+            }
+        }  
+        self.client.post('/create_file/', json=data)
+
+
         response = self.client.get('/files/')
         result = response.get_json()
         assert result is not None
-        assert len(result) == 1
-        assert result[0]['name'] == 'hello_world'
-        assert result[0]['size'] == 12
+        assert len(result) == 3        
 
     def test_create_file(self):
         data = {
@@ -57,17 +63,17 @@ class AgentTest(TestCase):
         response = self.client.delete('file/hello_world')        
         assert response.status_code == 200
 
-    def test_create_many_files(self):
-        num_files = 500        
-        data = {}
+    # def test_create_many_files(self):
+    #     num_files = 500        
+    #     data = {}
         
-        for i in range(num_files):
-            data['file{}'.format(i)] = {'size' : '1M'}            
-        response = self.client.post('/create_file/',json=data)
-        result = response.get_json()
+    #     for i in range(num_files):
+    #         data['file{}'.format(i)] = {'size' : '1M'}            
+    #     response = self.client.post('/create_file/',json=data)
+    #     result = response.get_json()
 
-        response = self.client.delete('/file/*')
-        result = response.get_json()
+    #     response = self.client.delete('/file/*')
+    #     result = response.get_json()
 
     def test_get_tools(self):
         response = self.client.get('/tools')

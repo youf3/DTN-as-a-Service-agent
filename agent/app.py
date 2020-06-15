@@ -5,6 +5,7 @@ import sys
 import subprocess
 import traceback
 import ping3
+from pathlib import Path
 from libs.TransferTools import TransferTools
 from libs.Schemes import NumaScheme
 
@@ -61,11 +62,11 @@ def get_files(dirname):
     contents = []
     total = {'size': 0, 'dir': 0, 'file': 0}
 
-    for filename in os.listdir(dirname):
+    for filename in list(Path(dirname).glob('**/*')):
         filepath = os.path.join(dirname, filename)
         stat_res = os.stat(filepath)
         info = {}
-        info['name'] = filename
+        info['name'] = os.path.relpath(filename, dirname)
         info['mtime'] = stat_res.st_mtime
         ft = get_type(stat_res.st_mode)
         info['type'] = ft
@@ -79,7 +80,7 @@ def get_files(dirname):
 
 def prepare_file(jobname, filename, size):
     write_global=not os.path.exists(jobname)
-        
+    Path(os.path.dirname(filename)).mkdir(parents=True, exist_ok=True)
     with open(jobname, 'a') as fh:
         if write_global:
             fh.writelines('[global]\nname=fio-seq-write\nrw=write\nbs=1m\ndirect=1\nnumjobs=1\nioengine=libaio\niodepth=16\nthread=1\ngroup_reporting=1\n\n')
@@ -124,8 +125,8 @@ def create_file():
         job_file = os.path.join('agent/scripts/' , 'files{}.fio'.format(fio_job_num))
         if 'size' not in param[file_spec]:
             abort(make_response(jsonify(message='filename and size are required'), 400))
-
-        prepare_file(job_file, os.path.join(app.config['FILE_LOC'] , file_spec), param[file_spec]['size'])
+        filepath = os.path.join(app.config['FILE_LOC'] , file_spec)
+        prepare_file(job_file, filepath, param[file_spec]['size'])
 
         file_cnt += 1
         if file_cnt > MAX_FIO_JOBS:
