@@ -83,7 +83,8 @@ class AgentTest(TestCase):
     def test_sendfile_nuttcp(self):
         data = {            
             'file' : 'hello_world',            
-            'direct' : False
+            'direct' : False,
+            'blocksize' : 1
         }        
         response = self.client.post('/sender/nuttcp', json=data)
         result = response.get_json()
@@ -98,6 +99,7 @@ class AgentTest(TestCase):
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
         result['direct'] = False
+        result['blocksize'] = 1
 
         response = self.client.post('/receiver/nuttcp', json=result)
         result = response.get_json()

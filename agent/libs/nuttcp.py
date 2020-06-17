@@ -13,6 +13,7 @@ class nuttcp(TransferTools):
         cport = nuttcp.cports.pop()
         dport = nuttcp.dports.pop()
         logging.debug('running nuttcp server on cport {} file {} dport {}'.format(cport, srcfile, dport))
+        logging.debug('args {}'.format(optional_args))
         
         filemode = ' -sdz'
         if 'direct' in optional_args and optional_args['direct'] == False:
@@ -21,8 +22,13 @@ class nuttcp(TransferTools):
         if 'zerocopy' in optional_args and optional_args['zerocopy'] == False:
             filemode = filemode.replace('z', '')
         
-        cmd = 'nuttcp -S -1 -P {} -p {}{} -l8m --nofork < {}'.format(cport, dport, filemode, srcfile)
-        logging.debug(cmd)        
+        if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
+            blocksize = optional_args['blocksize']
+        else:
+            blocksize = 8192
+
+        cmd = 'nuttcp -S -1 -P {} -p {}{} -l{}k --nofork < {}'.format(cport, dport, filemode, blocksize, srcfile)
+        logging.debug(cmd)
         proc = subprocess.Popen(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
         nuttcp.running_svr_threads[cport] = [proc, dport]
         if 'numa_node' in optional_args:
@@ -30,6 +36,7 @@ class nuttcp(TransferTools):
         return {'cport' : cport, 'dport': dport, 'size' : os.path.getsize(srcfile), 'result': True}
 
     def run_receiver(self, address, dstfile, **optional_args):
+        
         if 'cport' not in optional_args:
             logging.error('cport number not found')
             raise Exception('Control port not found')
@@ -46,9 +53,16 @@ class nuttcp(TransferTools):
         if 'zerocopy' in optional_args and optional_args['zerocopy'] == False:
             filemode = filemode.replace('z', '')
 
+        if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
+            blocksize = optional_args['blocksize']
+        else:
+            blocksize = 8192
+
         cport = optional_args['cport']
         dport = optional_args['dport']
-        cmd = 'nuttcp -r -i 1 -P {} -p {}{} -l8m --nofork {} > {}'.format(cport, dport, filemode, address, dstfile)
+        logging.debug('running nuttcp client on cport {} file {} dport {}'.format(cport, dstfile, dport))
+        logging.debug('args {}'.format(optional_args))
+        cmd = 'nuttcp -r -i 1 -P {} -p {}{} -l{}k --nofork {} > {}'.format(cport, dport, filemode, blocksize, address, dstfile)
         logging.debug(cmd)
         proc = subprocess.Popen(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
         if 'numa_node' in optional_args:
