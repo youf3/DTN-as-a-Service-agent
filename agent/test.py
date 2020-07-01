@@ -63,6 +63,17 @@ class AgentTest(TestCase):
         response = self.client.delete('file/hello_world')        
         assert response.status_code == 200
 
+    def test_create_dir(self):
+        data = ['hello_dir', 'hello_dir2']  
+        response = self.client.post('/create_dir/', json=data)        
+        assert response.status_code == 200
+
+        response = self.client.delete('file/hello_dir')        
+        assert response.status_code == 200
+
+        response = self.client.delete('file/hello_dir2')
+        assert response.status_code == 200
+
     # def test_create_many_files(self):
     #     num_files = 500        
     #     data = {}

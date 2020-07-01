@@ -140,6 +140,18 @@ def create_file():
     ret = commit_write(jobs)
     return jsonify(ret.returncode)
 
+
+@app.route('/create_dir/', methods=['POST'])
+@metrics.counter('daas_agent_dir_create', 'Number of dir created')
+def create_dir():
+    dirs = request.get_json()
+
+    for i in dirs:
+        dirpath = os.path.join(app.config['FILE_LOC'] , i)
+        if not os.path.exists(dirpath):
+            os.makedirs(dirpath)    
+    return ''
+
 @app.route('/file/<path:path>', methods=['DELETE'])
 @metrics.counter('daas_agent_file_delete', 'Number of files deleted')
 def delete_file(path):
@@ -164,8 +176,11 @@ def delete_file(path):
             abort(make_response(jsonify(message="Cannot find the specified file {}".format(filepath)), 400))
 
         try:
-            os.remove(filepath)
-        except Exception:
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+            else:
+                os.removedirs(filepath)
+        except Exception as e:
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
         return ""
 
