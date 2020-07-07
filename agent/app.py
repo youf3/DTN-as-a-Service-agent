@@ -290,6 +290,23 @@ def run_receiver(tool):
     
     return jsonify(ret)
 
+@app.route('/cleanup/<tool>', methods=['GET'])
+@metrics.counter('daas_agent_cleanup', 'Number of cleanup',
+labels={'status': lambda r: r.status_code})
+def cleanup(tool):
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+
+    target_module = [x for x in loaded_modules if tool in x]
+    if len(target_module) > 1 :
+        abort(make_response(jsonify(message="Duplicated transfer tool name" + target_module), 400))
+    target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
+
+    try:        
+        retcode = target_tool_cls.cleanup()
+        return jsonify(retcode)
+    except Exception:
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+
 if __name__ == '__main__':
     load_config()    
     app.run('0.0.0.0')

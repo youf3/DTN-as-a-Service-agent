@@ -29,7 +29,7 @@ class nuttcp(TransferTools):
 
         cmd = 'nuttcp -S -1 -P {} -p {}{} -l{}k --nofork < {}'.format(cport, dport, filemode, blocksize, srcfile)
         logging.debug(cmd)
-        proc = subprocess.Popen(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
+        proc = subprocess.Popen('exec ' + cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
         nuttcp.running_svr_threads[cport] = [proc, dport]
         if 'numa_node' in optional_args:
             super().bind_proc_to_numa(proc, optional_args['numa_node'])
@@ -64,7 +64,7 @@ class nuttcp(TransferTools):
         logging.debug('args {}'.format(optional_args))
         cmd = 'nuttcp -r -i 1 -P {} -p {}{} -l{}k --nofork {} > {}'.format(cport, dport, filemode, blocksize, address, dstfile)
         logging.debug(cmd)
-        proc = subprocess.Popen(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
+        proc = subprocess.Popen('exec ' + cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
         if 'numa_node' in optional_args:
             super().bind_proc_to_numa(proc, optional_args['numa_node'])
         nuttcp.running_cli_threads[cport] = [proc, dport]
@@ -99,3 +99,22 @@ class nuttcp(TransferTools):
         else:
             logging.error('Node has to be either sender or receiver')
             raise Exception('Node has to be either sender or receiver')        
+
+    @classmethod
+    def cleanup(cls):
+        for i,j in nuttcp.running_svr_threads.items():
+            j[0].kill()
+            j[0].kill()
+            j[0].communicate()
+        
+        nuttcp.running_svr_threads = {}
+
+        for i,j in nuttcp.running_cli_threads.items():
+            j[0].kill()
+            j[0].kill()
+            j[0].communicate()
+
+        nuttcp.running_cli_threads = {}
+
+        nuttcp.cports = list(range(30001, 31000))
+        nuttcp.dports = list(range(31001, 32000))
