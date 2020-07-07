@@ -105,7 +105,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         sender_counter = get_prom_metric('daas_agent_sender_total{status="200"}', data)
-        assert sender_counter == '1.0'
+        assert sender_counter == '2.0'
 
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
@@ -202,6 +202,21 @@ class AgentTest(TestCase):
         response = self.client.get('/trim')
         result = response.get_json()       
         assert result['returncode'] == 0
+
+    def test_cleanup(self):
+        data = {            
+            'file' : 'hello_world',            
+            'direct' : False,
+            'numa_scheme' : 2,
+            'numa_node' : 0,            
+        }        
+
+        response = self.client.post('/sender/nuttcp', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True  
+
+        response = self.client.get('/cleanup/nuttcp')
+        assert response.status_code == 200
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

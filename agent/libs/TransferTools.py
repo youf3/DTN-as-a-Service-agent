@@ -25,6 +25,11 @@ class TransferTools(ABC):
     def poll_progress(cls, port, **optional_args):
         pass
 
+    @classmethod
+    @abstractmethod
+    def cleanup(cls):
+        pass
+
     def bind_proc_to_numa(self, proc, numa_num):
         if self.numa_scheme == NumaScheme.OS_CONTROLLED or not numa.available(): return
         else: 
