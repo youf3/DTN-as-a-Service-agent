@@ -219,7 +219,10 @@ def poll(tool):
     if 'dstfile' in data:
         data['dstfile'] = os.path.join(app.config['FILE_LOC'], data['dstfile'])
     
-    logging.debug('polling {} {}'.format(data['node'], tool))
+    if 'node' in data:
+        logging.debug('polling {} {}'.format(data['node'], tool))
+    else:
+        logging.debug('polling {}'.format(tool))
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)    
     try:        
