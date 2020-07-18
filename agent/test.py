@@ -4,6 +4,7 @@ import os
 import app
 import unittest
 import tempfile
+import time
 
 def create_temp_file(tmpdir):
     with open(os.path.join(tmpdir, 'hello_world'), 'w') as fp:
@@ -60,6 +61,7 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result == 0 
 
+    def test_delete_file(self):
         response = self.client.delete('file/hello_world')        
         assert response.status_code == 200
 
@@ -120,7 +122,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '2.0'
+        assert receiver_counter == '3.0'
 
         cport = result.pop('cport')
 
@@ -155,7 +157,36 @@ class AgentTest(TestCase):
         transfer_counter = get_prom_metric('daas_agent_num_transfers 0.0', data)
         assert transfer_counter == '0.0'
 
-    def test_msrsync(self):
+    def test_msrsync_cleanup(self):
+
+        self.test_create_file()
+
+        data = {            
+            'address' : os.path.join(self.tmpdirname.name, ''),
+            'file' : 'msrsync'
+        }
+
+        response = self.client.post('/receiver/msrsync', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True        
+
+        time.sleep(1)
+
+        response = self.client.get('/cleanup/msrsync')
+        assert response.status_code == 200
+        
+
+        # check prom metric for receiver
+        response = self.client.get('/metrics')
+        data = response.data.decode()
+        receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
+        assert receiver_counter == '2.0'
+
+        response = self.client.get('/msrsync/poll', json={})
+        
+        assert response.status_code == 200
+
+    def test_msrsync(self):       
         data = {            
             'address' : os.path.join(self.tmpdirname.name, ''),
             'file' : 'msrsync'
@@ -164,7 +195,7 @@ class AgentTest(TestCase):
         response = self.client.post('/receiver/msrsync', json=data)
         result = response.get_json()
         assert result.pop('result') == True
-
+        
         # check prom metric for receiver
         response = self.client.get('/metrics')
         data = response.data.decode()
