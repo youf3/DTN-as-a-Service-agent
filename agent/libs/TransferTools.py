@@ -3,6 +3,7 @@ import numa
 from libs.Schemes import NumaScheme
 import itertools
 import os
+import psutil
 
 class TransferTools(ABC):    
  
@@ -45,3 +46,8 @@ class TransferTools(ABC):
             return TransferTools.local_cpu_iterator.next()
         else: raise Exception('Incorrect Numa Affinity Scheme')
         
+    def kill(proc_pid):
+        process = psutil.Process(proc_pid)
+        for proc in process.children(recursive=True):
+            proc.kill()
+        process.kill()
