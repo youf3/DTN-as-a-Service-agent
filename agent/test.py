@@ -74,17 +74,17 @@ class AgentTest(TestCase):
         response = self.client.delete('file/hello_dir2')
         assert response.status_code == 200
 
-    # def test_create_many_files(self):
-    #     num_files = 500        
-    #     data = {}
+    def test_create_many_files(self):
+        num_files = 10        
+        data = {}
         
-    #     for i in range(num_files):
-    #         data['file{}'.format(i)] = {'size' : '1M'}            
-    #     response = self.client.post('/create_file/',json=data)
-    #     result = response.get_json()
+        for i in range(num_files):
+            data['file{}'.format(i)] = {'size' : '1M'}            
+        response = self.client.post('/create_file/',json=data)
+        result = response.get_json()
 
-    #     response = self.client.delete('/file/*')
-    #     result = response.get_json()
+        response = self.client.delete('/file/*')
+        result = response.get_json()
 
     def test_get_tools(self):
         response = self.client.get('/tools')
@@ -120,7 +120,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '1.0'
+        assert receiver_counter == '2.0'
 
         cport = result.pop('cport')
 
@@ -154,6 +154,30 @@ class AgentTest(TestCase):
         data = response.data.decode()
         transfer_counter = get_prom_metric('daas_agent_num_transfers 0.0', data)
         assert transfer_counter == '0.0'
+
+    def test_msrsync(self):
+        data = {            
+            'address' : os.path.join(self.tmpdirname.name, ''),
+            'file' : 'msrsync'
+        }
+
+        response = self.client.post('/receiver/msrsync', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        # check prom metric for receiver
+        response = self.client.get('/metrics')
+        data = response.data.decode()
+        receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
+        assert receiver_counter == '1.0'
+
+        response = self.client.get('/msrsync/poll', json={})
+        
+        assert response.status_code == 200
+
+        with open(os.path.join(self.tmpdirname.name, 'msrsync/hello_world'), 'r') as fp:
+            contents = fp.readlines()
+        assert contents == ['Hello world!']
 
     def test_sendfile_nuttcp_numa(self):
         data = {            
