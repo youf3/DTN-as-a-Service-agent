@@ -107,7 +107,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         sender_counter = get_prom_metric('daas_agent_sender_total{status="200"}', data)
-        assert sender_counter == '2.0'
+        assert sender_counter == '3.0'
 
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
@@ -122,7 +122,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '3.0'
+        assert receiver_counter == '5.0'
 
         cport = result.pop('cport')
 
@@ -173,14 +173,13 @@ class AgentTest(TestCase):
         time.sleep(1)
 
         response = self.client.get('/cleanup/msrsync')
-        assert response.status_code == 200
-        
+        assert response.status_code == 200        
 
         # check prom metric for receiver
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '2.0'
+        assert receiver_counter == '4.0'
 
         response = self.client.get('/msrsync/poll', json={})
         
@@ -209,6 +208,58 @@ class AgentTest(TestCase):
         with open(os.path.join(self.tmpdirname.name, 'msrsync/hello_world'), 'r') as fp:
             contents = fp.readlines()
         assert contents == ['Hello world!']
+
+    def test_msrsync_and_nuttcp(self):
+
+        self.test_create_file()
+
+        data = {            
+            'address' : os.path.join(self.tmpdirname.name, ''),
+            'file' : 'msrsync'
+        }
+
+        response = self.client.post('/receiver/msrsync', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True
+        
+        data = {
+            'file' : 'hello_world',            
+            'direct' : False,
+            'blocksize' : 1
+        }        
+        response = self.client.post('/sender/nuttcp', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        result['file'] = 'hello_world3'
+        result['address'] = '127.0.0.1'
+        result['direct'] = False
+        result['blocksize'] = 1
+
+        response = self.client.post('/receiver/nuttcp', json=result)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        cport = result.pop('cport')
+
+        data = {
+            'node' : 'receiver',
+            'cport' : cport,
+            'dstfile' : 'hello_world2'
+        }
+
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()        
+        assert result == [0, 104857600]
+
+        data['node'] = 'sender'
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()        
+        assert result == 0
+
+        response = self.client.get('/msrsync/poll', json={})
+        
+        assert response.status_code == 200
 
     def test_sendfile_nuttcp_numa(self):
         data = {            
