@@ -175,12 +175,6 @@ class AgentTest(TestCase):
         response = self.client.get('/cleanup/msrsync')
         assert response.status_code == 200        
 
-        # check prom metric for receiver
-        response = self.client.get('/metrics')
-        data = response.data.decode()
-        receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '4.0'
-
         response = self.client.get('/msrsync/poll', json={})
         
         assert response.status_code == 200

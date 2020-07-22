@@ -39,5 +39,5 @@ class msrsync(TransferTools):
     @classmethod
     def cleanup(cls):
         logging.debug('cleaning up thread {}'.format(msrsync.running_thread.pid))
-        TransferTools.kill(msrsync.running_thread.pid)
+        TransferTools.kill_proc_tree(msrsync.running_thread.pid)
         msrsync.running_thread.communicate()

@@ -4,6 +4,7 @@ from libs.Schemes import NumaScheme
 import itertools
 import os
 import psutil
+import signal
 
 class TransferTools(ABC):    
  
@@ -46,8 +47,20 @@ class TransferTools(ABC):
             return TransferTools.local_cpu_iterator.next()
         else: raise Exception('Incorrect Numa Affinity Scheme')
         
-    def kill(proc_pid):
-        process = psutil.Process(proc_pid)
-        for proc in process.children(recursive=True):
-            proc.kill()
-        process.kill()
+    def kill_proc_tree(pid, sig=signal.SIGTERM, include_parent=True,
+                   timeout=None, on_terminate=None):
+        """Kill a process tree (including grandchildren) with signal
+        "sig" and return a (gone, still_alive) tuple.
+        "on_terminate", if specified, is a callabck function which is
+        called as soon as a child terminates.
+        """
+        assert pid != os.getpid(), "won't kill myself"
+        parent = psutil.Process(pid)
+        children = parent.children(recursive=True)
+        if include_parent:
+            children.append(parent)
+        for p in children:
+            p.send_signal(sig)
+        gone, alive = psutil.wait_procs(children, timeout=timeout,
+                                        callback=on_terminate)
+        return (gone, alive)
