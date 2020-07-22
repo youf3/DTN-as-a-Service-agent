@@ -5,6 +5,11 @@ stages:
     - test
     - deploy
 
+cache:
+    paths:
+        - .pip
+      
+
 install_dependencies:
     stage: build
     script:
@@ -13,15 +18,12 @@ install_dependencies:
         - wget -O nuttcp.tar.bz2 http://nuttcp.net/nuttcp/nuttcp-8.1.4.tar.bz2
         - tar -xvf nuttcp.tar.bz2
         - cd nuttcp-8.1.4; make; cd ..
-        - pip install --user numa psutil 
+        - mkdir -p .pip        
+        - pip install --cache-dir=.pip --user numa psutil 
         - git clone https://github.com/jbd/msrsync.git; cd msrsync; chmod +x msrsync
-        - cp -r /root/.cache ./
-        - cp -r /root/.local ./
-        
+
     artifacts:
         paths:
-            - .cache
-            - .local
             - nuttcp-8.1.4/nuttcp-8.1.4
             - msrsync/msrsync
 
@@ -30,10 +32,8 @@ test:
     before_script:
         - cp nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
         - cp msrsync/msrsync /usr/local/bin/msrsync
-        - cp -r .cache /root/
-        - cp -r .local /root/
-        - apt update; apt install -y libnuma-dev fio
-        - pip install -r agent/requirements.txt
+        - apt update; apt install -y libnuma-dev fio python rsync
+        - pip install --cache-dir=.pip -r agent/requirements.txt
     script:         
         - python agent/test.py
 
