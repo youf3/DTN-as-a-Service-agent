@@ -3,3 +3,4 @@ flask-testing
 prometheus_flask_exporter
 numa
 ping3
+psutil
