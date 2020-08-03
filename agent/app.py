@@ -1,4 +1,4 @@
-import os, glob
+import os, glob, shutil
 import stat
 import logging
 import sys
@@ -165,10 +165,12 @@ def delete_file(path):
     filepath = os.path.join(app.config['FILE_LOC'], path)
 
     if path == '*':
-        files = glob.glob(app.config['FILE_LOC'] + '/**/*', recursive=True)
+        files = glob.glob(app.config['FILE_LOC'] + '/*', recursive=True)
         for fname in files:
             if os.path.isfile(fname):
                 os.remove(fname)
+            else:
+                shutil.rmtree(fname)
         return ""
 
     else:
@@ -179,7 +181,7 @@ def delete_file(path):
             if os.path.isfile(filepath):
                 os.remove(filepath)
             else:
-                os.removedirs(filepath)
+                shutil.rmtree(filepath)
         except Exception as e:
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
         return ""

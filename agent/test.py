@@ -70,6 +70,10 @@ class AgentTest(TestCase):
         response = self.client.post('/create_dir/', json=data)        
         assert response.status_code == 200
 
+        data = {'hello_dir/testfile' : {'size' : '1M'}}
+        response = self.client.post('/create_file/',json=data)
+        assert response.status_code == 200
+
         response = self.client.delete('file/hello_dir')        
         assert response.status_code == 200
 
