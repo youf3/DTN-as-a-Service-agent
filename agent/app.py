@@ -230,8 +230,12 @@ def poll(tool):
     try:        
         retcode = target_tool_cls.poll_progress(**data)
         return jsonify(retcode)
-    except Exception:
-        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+    except Exception as e:
+        if hasattr(e, 'file'):
+            filepath = os.path.relpath(e.file, app.config['FILE_LOC'])
+            abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1], file = filepath), 400))
+        else:
+            abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 @app.route('/sender/<tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',

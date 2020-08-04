@@ -111,7 +111,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         sender_counter = get_prom_metric('daas_agent_sender_total{status="200"}', data)
-        assert sender_counter == '3.0'
+        assert sender_counter == '4.0'
 
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
@@ -126,7 +126,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '5.0'
+        assert receiver_counter == '6.0'
 
         cport = result.pop('cport')
 
@@ -160,6 +160,53 @@ class AgentTest(TestCase):
         data = response.data.decode()
         transfer_counter = get_prom_metric('daas_agent_num_transfers 0.0', data)
         assert transfer_counter == '0.0'
+
+    def test_nuttcp_timeout(self):
+        data = {
+            'hello_world' : {                
+                'size' : '10M'
+            }
+        }  
+        response = self.client.post('/create_file/', json=data)
+        result = response.get_json()
+        assert result == 0 
+
+        data = {            
+            'file' : 'hello_world',            
+            'direct' : False,
+            'blocksize' : 1
+        }        
+        response = self.client.post('/sender/nuttcp', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        result['file'] = 'hello_world2'
+        result['address'] = '127.0.0.1'
+        result['direct'] = False
+        result['blocksize'] = 1        
+
+        response = self.client.post('/receiver/nuttcp', json=result)
+        result = response.get_json()
+        assert result.pop('result') == True        
+
+        cport = result.pop('cport')
+
+        data = {
+            'node' : 'receiver',
+            'cport' : cport,
+            'dstfile' : 'hello_world2',
+            'timeout' : 0
+        }
+
+        response = self.client.get('/nuttcp/poll', json=data)
+        #result = response.get_json()        
+        assert response.status_code == 400
+
+        data['node'] = 'sender'
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()
+        assert result['file'] == 'hello_world'
+
 
     def test_msrsync_cleanup(self):
 

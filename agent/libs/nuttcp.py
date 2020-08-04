@@ -3,6 +3,14 @@ import subprocess
 import logging
 import sys, os
 
+class TransferTimeout(Exception):
+    def __init__(self, msg, file):
+        self.msg = msg
+        self.file = file
+
+    def __str__(self):
+        return self.msg
+
 class nuttcp(TransferTools):
     running_svr_threads = {}
     running_cli_threads = {}
@@ -30,7 +38,7 @@ class nuttcp(TransferTools):
         cmd = 'nuttcp -S -1 -P {} -p {}{} -l{}k --nofork < {}'.format(cport, dport, filemode, blocksize, srcfile)
         logging.debug(cmd)
         proc = subprocess.Popen('exec ' + cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
-        nuttcp.running_svr_threads[cport] = [proc, dport]
+        nuttcp.running_svr_threads[cport] = [proc, dport, srcfile]
         if 'numa_node' in optional_args:
             super().bind_proc_to_numa(proc, optional_args['numa_node'])
         return {'cport' : cport, 'dport': dport, 'size' : os.path.getsize(srcfile), 'result': True}
@@ -77,25 +85,50 @@ class nuttcp(TransferTools):
             raise Exception('Control port not found')
         elif not 'node' in optional_args:
             logging.error('Node not found')
-            raise Exception('Node not found')            
+            raise Exception('Node not found')
+
+        if 'timeout' not in optional_args:
+            timeout = None
+        else:
+            timeout = optional_args['timeout']
             
         cport = optional_args.pop('cport')        
         
         if optional_args['node'] == 'sender':
             threads = nuttcp.running_svr_threads
-            logging.debug('threads: ' + str(threads))            
+            # logging.debug('threads: ' + str(threads))            
             proc = threads[cport][0]
-            proc.communicate(timeout=None)
-            completed_thread = threads.pop(cport)
-            nuttcp.cports.append(cport)
-            nuttcp.dports.append(completed_thread[1])
-            return proc.returncode
+            try:
+                proc.communicate(timeout=timeout)
+                completed_thread = threads.pop(cport)
+                nuttcp.cports.append(cport)
+                nuttcp.dports.append(completed_thread[1])
+                return proc.returncode
+            except subprocess.TimeoutExpired:
+                err_thread = threads.pop(cport)
+                err_thread[0].kill()
+                err_thread[0].kill()
+                err_thread[0].communicate()
+                nuttcp.cports.append(cport)
+                nuttcp.dports.append(err_thread[1])
+                logging.error('sender timed out on port %s' % cport)
+                raise TransferTimeout('sender timed out on port %s' % cport, err_thread[2])
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
-            logging.debug('threads: ' + str(threads))
-            proc = nuttcp.running_cli_threads[cport][0]
-            proc.communicate(timeout=None)
-            return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
+            # logging.debug('threads: ' + str(threads))
+            try:
+                proc = nuttcp.running_cli_threads[cport][0]
+                proc.communicate(timeout=timeout)
+                threads.pop(cport)
+                return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
+            except subprocess.TimeoutExpired:
+                err_thread = threads.pop(cport)
+                err_thread[0].kill()
+                err_thread[0].kill()
+                err_thread[0].communicate()                
+                logging.error('receiver timed out on port %s' % cport)
+                raise Exception('receiver timed out on port %s' % cport)
+            
         else:
             logging.error('Node has to be either sender or receiver')
             raise Exception('Node has to be either sender or receiver')        
