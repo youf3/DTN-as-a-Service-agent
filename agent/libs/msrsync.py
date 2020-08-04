@@ -11,6 +11,10 @@ class msrsync(TransferTools):
         raise NotImplementedError
         pass
 
+    def free_port(self, port, **optional_args):
+        raise NotImplementedError
+        pass
+
     def run_receiver(self, address, dstfile, **optional_args):
         
         logging.debug('Running msrsync')

@@ -79,6 +79,16 @@ class nuttcp(TransferTools):
         return {'cport' : cport, 'dport': dport, 'result': True}
 
     @classmethod
+    def free_port(cls, port, **optional_args):
+        threads = nuttcp.running_svr_threads
+        err_thread = threads.pop(port)
+        err_thread[0].kill()
+        err_thread[0].kill()
+        err_thread[0].communicate()
+        nuttcp.cports.append(port)
+        nuttcp.dports.append(err_thread[1])
+
+    @classmethod
     def poll_progress(cls, **optional_args):
         if not 'cport' in optional_args:
             logging.error('Control port not found')
@@ -105,14 +115,10 @@ class nuttcp(TransferTools):
                 nuttcp.dports.append(completed_thread[1])
                 return proc.returncode
             except subprocess.TimeoutExpired:
-                err_thread = threads.pop(cport)
-                err_thread[0].kill()
-                err_thread[0].kill()
-                err_thread[0].communicate()
-                nuttcp.cports.append(cport)
-                nuttcp.dports.append(err_thread[1])
+                filepath = threads[cport][2]
+                nuttcp.free_port(cport)
                 logging.error('sender timed out on port %s' % cport)
-                raise TransferTimeout('sender timed out on port %s' % cport, err_thread[2])
+                raise TransferTimeout('sender timed out on port %s' % cport, filepath)
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
             # logging.debug('threads: ' + str(threads))

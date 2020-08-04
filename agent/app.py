@@ -237,7 +237,7 @@ def poll(tool):
         else:
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
-@app.route('/sender/<tool>', methods=['POST'])
+@app.route('/sender/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',
 labels={'status': lambda r: r.status_code})
 def run_sender(tool):
@@ -269,7 +269,7 @@ def run_sender(tool):
     
     return jsonify(ret)
 
-@app.route('/receiver/<tool>', methods=['POST'])
+@app.route('/receiver/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_receiver', 'Number of receiver created',
 labels={'status': lambda r: r.status_code})
 def run_receiver(tool):
@@ -299,7 +299,7 @@ def run_receiver(tool):
     
     return jsonify(ret)
 
-@app.route('/cleanup/<tool>', methods=['GET'])
+@app.route('/cleanup/<string:tool>', methods=['GET'])
 @metrics.counter('daas_agent_cleanup', 'Number of cleanup',
 labels={'status': lambda r: r.status_code})
 def cleanup(tool):
@@ -312,6 +312,23 @@ def cleanup(tool):
 
     try:        
         retcode = target_tool_cls.cleanup()
+        return jsonify(retcode)
+    except Exception:
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+
+@app.route('/free_port/<string:tool>/<int:port>', methods=['GET'])
+@metrics.counter('daas_agent_free_port', 'Number of freeing port',
+labels={'status': lambda r: r.status_code})
+def free_port(tool, port):
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+
+    target_module = [x for x in loaded_modules if tool in x]
+    if len(target_module) > 1 :
+        abort(make_response(jsonify(message="Duplicated transfer tool name" + target_module), 400))
+    target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
+
+    try:        
+        retcode = target_tool_cls.free_port(port)
         return jsonify(retcode)
     except Exception:
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))

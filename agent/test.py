@@ -111,7 +111,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         sender_counter = get_prom_metric('daas_agent_sender_total{status="200"}', data)
-        assert sender_counter == '4.0'
+        assert sender_counter == '5.0'
 
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
@@ -207,6 +207,19 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result['file'] == 'hello_world'
 
+    def test_free_port(self):       
+        data = {            
+            'file' : 'hello_world',            
+            'direct' : False,
+            'blocksize' : 1
+        }        
+        response = self.client.post('/sender/nuttcp', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True        
+        
+        cport = result['cport']
+        response = self.client.get('/free_port/nuttcp/{}'.format(cport))
+        result = response.get_json()        
 
     def test_msrsync_cleanup(self):
 
