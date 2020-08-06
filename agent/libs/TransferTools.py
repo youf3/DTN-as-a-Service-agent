@@ -27,6 +27,10 @@ class TransferTools(ABC):
     def poll_progress(cls, port, **optional_args):
         pass
 
+    @abstractmethod
+    def free_port(cls, port, **optional_args):
+        pass
+
     @classmethod
     @abstractmethod
     def cleanup(cls):
