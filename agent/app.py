@@ -240,7 +240,7 @@ def poll(tool):
 @metrics.counter('daas_agent_sender', 'Number of sender created',
 labels={'status': lambda r: r.status_code})
 def run_sender(tool):
-    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
     data = request.get_json()
     if not 'file' in data:
@@ -302,7 +302,7 @@ def run_receiver(tool):
 @metrics.counter('daas_agent_cleanup', 'Number of cleanup',
 labels={'status': lambda r: r.status_code})
 def cleanup(tool):
-    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
     target_module = [x for x in loaded_modules if tool in x]
     if len(target_module) > 1 :
@@ -319,7 +319,7 @@ def cleanup(tool):
 @metrics.counter('daas_agent_free_port', 'Number of freeing port',
 labels={'status': lambda r: r.status_code})
 def free_port(tool, port):
-    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
     target_module = [x for x in loaded_modules if tool in x]
     if len(target_module) > 1 :
