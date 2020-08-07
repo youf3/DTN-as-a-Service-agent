@@ -6,7 +6,7 @@ import subprocess
 import traceback
 import ping3
 from pathlib import Path
-from libs.TransferTools import TransferTools
+from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
 
 logging.getLogger().setLevel(logging.DEBUG)
@@ -230,11 +230,10 @@ def poll(tool):
     try:        
         retcode = target_tool_cls.poll_progress(**data)
         return jsonify(retcode)
-    except Exception as e:
-        if hasattr(e, 'file'):
+    except TransferTimeout as e:        
             filepath = os.path.relpath(e.file, app.config['FILE_LOC'])
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1], file = filepath), 400))
-        else:
+    except Exception:
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 @app.route('/sender/<string:tool>', methods=['POST'])
