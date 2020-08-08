@@ -6,6 +6,14 @@ import os
 import psutil
 import signal
 
+class TransferTimeout(Exception):
+    def __init__(self, msg, file):
+        self.msg = msg
+        self.file = file
+
+    def __str__(self):
+        return self.msg
+
 class TransferTools(ABC):    
  
     local_cpu_iterator = None

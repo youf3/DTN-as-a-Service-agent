@@ -1,15 +1,7 @@
-from libs.TransferTools import TransferTools
+from libs.TransferTools import TransferTools, TransferTimeout
 import subprocess
 import logging
-import sys, os
-
-class TransferTimeout(Exception):
-    def __init__(self, msg, file):
-        self.msg = msg
-        self.file = file
-
-    def __str__(self):
-        return self.msg
+import sys, os, time
 
 class nuttcp(TransferTools):
     running_svr_threads = {}

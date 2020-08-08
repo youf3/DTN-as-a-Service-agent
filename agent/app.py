@@ -5,8 +5,9 @@ import sys
 import subprocess
 import traceback
 import ping3
+import json
 from pathlib import Path
-from libs.TransferTools import TransferTools
+from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
 
 logging.getLogger().setLevel(logging.DEBUG)
@@ -230,18 +231,17 @@ def poll(tool):
     try:        
         retcode = target_tool_cls.poll_progress(**data)
         return jsonify(retcode)
-    except Exception as e:
-        if hasattr(e, 'file'):
+    except TransferTimeout as e:        
             filepath = os.path.relpath(e.file, app.config['FILE_LOC'])
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1], file = filepath), 400))
-        else:
+    except Exception:
             abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 @app.route('/sender/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',
 labels={'status': lambda r: r.status_code})
 def run_sender(tool):
-    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
     data = request.get_json()
     if not 'file' in data:
@@ -303,7 +303,7 @@ def run_receiver(tool):
 @metrics.counter('daas_agent_cleanup', 'Number of cleanup',
 labels={'status': lambda r: r.status_code})
 def cleanup(tool):
-    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
     target_module = [x for x in loaded_modules if tool in x]
     if len(target_module) > 1 :
@@ -320,7 +320,7 @@ def cleanup(tool):
 @metrics.counter('daas_agent_free_port', 'Number of freeing port',
 labels={'status': lambda r: r.status_code})
 def free_port(tool, port):
-    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} found".format(tool) + target_module), 404))
+    if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
     target_module = [x for x in loaded_modules if tool in x]
     if len(target_module) > 1 :
