@@ -384,29 +384,34 @@ class AgentTest(TestCase):
 
     def test_stressio(self):
         data = {
-            'sequence' : {
+            'read' : {
                 0: '100M',                
                 10 : '0',
                 20 : '10M'
-                
+            },
+
+            'write' : {
+                0: '100M',                
+                10 : '0',
+                20 : '10M'            
             },
             'file':'disk0/fiotest',
-            'size' : '1G',
+            'size' : '100M',
             'address' : ''
         }
         response = self.client.post('/receiver/stress', json=data)
         result = response.get_json()
         assert result.pop('result') == True
 
-        # response = self.client.get('/stress/poll', json={})
-        # result = response.get_json()
-        # assert response.status_code == 200
-
-        response = self.client.get('/cleanup/stress')        
+        response = self.client.get('/stress/poll', json={})
+        result = response.get_json()
         assert response.status_code == 200
 
-        response = self.client.get('/stress/poll', json={})
-        assert response.status_code == 400
+        response = self.client.get('/cleanup/stress')        
+        # assert response.status_code == 200
+
+        # response = self.client.get('/stress/poll', json={})
+        # assert response.status_code == 400
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
