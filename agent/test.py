@@ -382,19 +382,18 @@ class AgentTest(TestCase):
         response = self.client.get('/cleanup/nuttcp')
         assert response.status_code == 200
 
-    def test_stressio(self):
+    def test_stressio(self):        
         data = {
             'read' : {
-                0: '100M',                
+                0: '100M',
                 10 : '0',
                 20 : '10M'
             },
-
             'write' : {
-                0: '100M',                
+                0: '100M',
                 10 : '0',
-                20 : '10M'            
-            },
+                20 : '10M'
+            },           
             'file':'disk0/fiotest',
             'size' : '100M',
             'address' : ''
@@ -412,6 +411,27 @@ class AgentTest(TestCase):
 
         # response = self.client.get('/stress/poll', json={})
         # assert response.status_code == 400
+
+    def test_stress_cpu(self):        
+        data = {            
+            'cpu' : {
+                0: '1',
+                10 : '2',
+                20 : '0'
+            },           
+            'file':'',            
+            'address' : ''
+        }
+        response = self.client.post('/receiver/stress_cpu', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        response = self.client.get('/stress_cpu/poll', json={})
+        result = response.get_json()
+        assert response.status_code == 200
+
+        response = self.client.get('/cleanup/stress_cpu')
+        # assert response.status_code == 200
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

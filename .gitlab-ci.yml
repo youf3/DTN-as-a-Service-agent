@@ -32,7 +32,9 @@ test:
     before_script:
         - cp nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
         - cp msrsync/msrsync /usr/local/bin/msrsync
-        - apt update; apt install -y libnuma-dev fio python rsync
+        - apt update; apt install -y curl
+        - curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.deb.sh | bash
+        - apt install -y libnuma-dev fio python rsync sysbench
         - pip install --cache-dir=.pip -r agent/requirements.txt
     script:         
         - python agent/test.py

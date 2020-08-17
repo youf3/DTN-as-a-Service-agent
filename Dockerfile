@@ -7,7 +7,9 @@ RUN git clone https://github.com/jbd/msrsync.git; cd msrsync; chmod +x msrsync
 RUN pip install --user numa psutil
 
 FROM python:3.6.10-slim
-RUN apt update; apt install -y numactl fio python rsync
+RUN apt update; apt install -y curl
+RUN curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.deb.sh | bash
+RUN apt install -y numactl fio python rsync sysbench
 COPY --from=build /nuttcp-8.1.4/nuttcp-8.1.4 /usr/local/bin/nuttcp
 COPY --from=build /msrsync/msrsync /usr/local/bin/msrsync
 COPY --from=build /root/.cache /root/.cache
