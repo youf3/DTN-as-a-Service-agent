@@ -5,7 +5,7 @@ import sys, os
 
 class stress(TransferTools):   
 
-    running_thread = None
+    fio_running_thread = None
 
     def run_sender(self, srcfile, **optional_args):
         raise NotImplementedError
@@ -25,7 +25,7 @@ class stress(TransferTools):
 
         try:
             for j in modes:
-                seq[j] = sorted([int(i) for i in optional_args[j]])            
+                if j in optional_args: seq[j] = sorted([int(i) for i in optional_args[j]]) 
         except Exception:
             raise Exception('Sequence has to be numbers')        
 
@@ -38,7 +38,7 @@ class stress(TransferTools):
         with open('bench.fio', 'w') as fh:            
             fh.writelines('[global]\nname=fio-seq-write\nbs=1m\ndirect=1\nioengine=sync\niodepth=16'
             '\ngroup_reporting=1\ntime_based\nfilename={}\nsize={}\n\n'.format(dstfile, fsize))            
-            for i in modes:
+            for i in seq:
                 prev_time = 0
                 for j in range(0, len(seq[i])-1):
                     duration = seq[i][j+1] - seq[i][j]
@@ -48,23 +48,23 @@ class stress(TransferTools):
                     prev_time = prev_time + duration
         
         proc = subprocess.Popen(['fio', 'bench.fio'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-        stress.running_thread = proc
+        stress.fio_running_thread = proc
         return {'result': True}
 
     @classmethod
     def poll_progress(cls, **optional_args):        
-        if stress.running_thread == None:
+        if stress.fio_running_thread == None:
             raise Exception('stress is not running')
 
-        stress.running_thread.communicate(timeout=None)        
+        stress.fio_running_thread.communicate(timeout=None)        
         
     @classmethod
     def cleanup(cls):
-        logging.debug('cleaning up thread {}'.format(stress.running_thread.pid))
+        logging.debug('cleaning up thread {}'.format(stress.fio_running_thread.pid))
         try:
-            TransferTools.kill_proc_tree(stress.running_thread.pid)
-            stress.running_thread.communicate()
+            TransferTools.kill_proc_tree(stress.fio_running_thread.pid)
+            stress.fio_running_thread.communicate()
         finally:
-            os.remove('bench.fio')
-            stress.running_thread = None
+            if os.path.exists('bench.fio'): os.remove('bench.fio')
+            stress.fio_running_thread = None
         
