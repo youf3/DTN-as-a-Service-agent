@@ -193,7 +193,7 @@ class AgentTest(TestCase):
 
         response = self.client.get('/nuttcp/poll', json=data)
         result = response.get_json()        
-        assert result == 0
+        assert result == [0, None]
 
         data['node'] = 'sender'
         response = self.client.get('/nuttcp/poll', json=data)

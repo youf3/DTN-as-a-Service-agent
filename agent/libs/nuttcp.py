@@ -150,7 +150,7 @@ class nuttcp(TransferTools):
                 proc.communicate(timeout=timeout)
                 threads.pop(cport)
                 if optional_args['dstfile'] == None:
-                    return proc.returncode
+                    return proc.returncode, None
                 else:    
                     return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
             except subprocess.TimeoutExpired:
