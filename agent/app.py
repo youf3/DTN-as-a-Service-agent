@@ -219,7 +219,7 @@ labels={'status': lambda r: r.status_code})
 def poll(tool):
     data = request.get_json()
 
-    if 'dstfile' in data:
+    if 'dstfile' in data and data['dstfile'] != None:
         data['dstfile'] = os.path.join(app.config['FILE_LOC'], data['dstfile'])
     
     if 'node' in data:
@@ -247,10 +247,14 @@ def run_sender(tool):
     if not 'file' in data:
         abort(make_response(jsonify(message="file path is not found from request"), 400))
 
-    filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
+    if data['file'] == None:
+        filename = None       
 
-    if not os.path.exists(filename): 
-        abort(make_response(jsonify(message="file is not found"), 404))
+    else:
+        filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))
+
+        if not os.path.exists(filename): 
+            abort(make_response(jsonify(message="file is not found"), 404))    
 
     # find the module for a tool and instantiate it
     target_module = [x for x in loaded_modules if 'libs.' + tool == x]
@@ -277,7 +281,14 @@ def run_receiver(tool):
 
     data = request.get_json()    
 
-    filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
+    if data['file'] == None:
+        filename = None
+        if 'duration' not in data:
+            # TODO : check if server is mem-to-mem
+            abort(make_response(jsonify(message="Mem-to-mem transfer requires duration"), 404))
+    else:
+        filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
+        
     address = data.pop('address')    
 
     # find the module for a tool and instantiate it

@@ -161,6 +161,51 @@ class AgentTest(TestCase):
         transfer_counter = get_prom_metric('daas_agent_num_transfers 0.0', data)
         assert transfer_counter == '0.0'
 
+    def test_sendfile_nuttcp_memtomem(self):
+        data = {            
+            'file' : None,                    
+            'blocksize' : 1
+        }        
+        response = self.client.post('/sender/nuttcp', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        # check prom metric for sender
+        response = self.client.get('/metrics')
+        data = response.data.decode()
+        
+        result['file'] = None
+        result['address'] = '127.0.0.1'
+        result['duration'] = 5
+        result['blocksize'] = 1
+
+        response = self.client.post('/receiver/nuttcp', json=result)
+        result = response.get_json()
+        assert result.pop('result') == True
+
+        cport = result.pop('cport')
+
+        data = {
+            'node' : 'receiver',
+            'cport' : cport,
+            'dstfile' : None
+        }
+
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()        
+        assert result == 0
+
+        data['node'] = 'sender'
+        response = self.client.get('/nuttcp/poll', json=data)
+        result = response.get_json()        
+        assert result == 0
+
+        data['node'] = 'something'
+        response = self.client.get('/nuttcp/poll', json=data)
+        assert response.status_code == 400
+        result = response.get_json()        
+        assert result == {'message' : 'Exception: Node has to be either sender or receiver'}
+
     def test_nuttcp_timeout(self):
         data = {
             'hello_world' : {                
@@ -412,26 +457,26 @@ class AgentTest(TestCase):
         # response = self.client.get('/stress/poll', json={})
         # assert response.status_code == 400
 
-    def test_stress_cpu(self):        
-        data = {            
-            'cpu' : {
-                0: '1',
-                10 : '2',
-                20 : '0'
-            },           
-            'file':'',            
-            'address' : ''
-        }
-        response = self.client.post('/receiver/stress_cpu', json=data)
-        result = response.get_json()
-        assert result.pop('result') == True
+    # def test_stress_cpu(self):        
+    #     data = {            
+    #         'cpu' : {
+    #             0: '1',
+    #             10 : '2',
+    #             20 : '0'
+    #         },           
+    #         'file':'',            
+    #         'address' : ''
+    #     }
+    #     response = self.client.post('/receiver/stress_cpu', json=data)
+    #     result = response.get_json()
+    #     assert result.pop('result') == True
 
-        response = self.client.get('/stress_cpu/poll', json={})
-        result = response.get_json()
-        assert response.status_code == 200
+    #     response = self.client.get('/stress_cpu/poll', json={})
+    #     result = response.get_json()
+    #     assert response.status_code == 200
 
-        response = self.client.get('/cleanup/stress_cpu')
-        # assert response.status_code == 200
+    #     response = self.client.get('/cleanup/stress_cpu')
+    #     # assert response.status_code == 200
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
