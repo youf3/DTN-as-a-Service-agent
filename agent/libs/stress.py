@@ -41,7 +41,7 @@ class stress(TransferTools):
                     fh.writelines('[{0}]\nruntime={1}\nstartdelay={2}\nrate={3}\n\n'.format(i, duration,prev_time,speed ))                    
                 prev_time = prev_time + duration
         
-        proc = subprocess.Popen(['fio', 'bench.fio'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        proc = subprocess.Popen(['fio', 'bench.fio'], stdout = sys.stdout, stderr = sys.stdout)
         stress.running_thread = proc
         return {'result': True}
 
