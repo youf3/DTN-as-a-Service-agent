@@ -429,16 +429,12 @@ class AgentTest(TestCase):
 
     def test_stressio(self):        
         data = {
-            'read' : {
-                0: '100M',
+            'sequence' : {
+                0: '100M',                
                 10 : '0',
                 20 : '10M'
+                
             },
-            'write' : {
-                0: '100M',
-                10 : '0',
-                20 : '10M'
-            },           
             'file':'disk0/fiotest',
             'size' : '100M',
             'address' : ''
