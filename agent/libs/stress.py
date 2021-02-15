@@ -28,11 +28,16 @@ class stress(TransferTools):
             raise Exception('Sequence has to be numbers')        
         
         fsize = optional_args['size']
+        iomode = 'write'
+        if 'iomode' in optional_args:
+            if optional_args['iomode'].lower() != 'read' and optional_args['iomode'].lower() != 'write':
+                raise Exception('io mode has to be read or write')
+            iomode = optional_args['iomode']
 
         os.makedirs(os.path.dirname(dstfile), exist_ok=True)
         with open('bench.fio', 'w') as fh:            
-            fh.writelines('[global]\nname=fio-seq-write\nrw=write\nbs=1m\ndirect=1\nioengine=sync\niodepth=16'
-            '\ngroup_reporting=1\ntime_based\nfilename={}\nsize={}\n\n'.format(dstfile, fsize))
+            fh.writelines('[global]\nname=fio-seq-write\nrw={}\nbs=1m\ndirect=1\nioengine=sync\niodepth=16'
+            '\ngroup_reporting=1\ntime_based\nfilename={}\nsize={}\n\n'.format(iomode,dstfile, fsize))
             prev_time = 0        
             for i in range(0, len(sequence_t)-1):
                 duration = sequence_t[i+1] - sequence_t[i]
