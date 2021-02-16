@@ -1,3 +1,4 @@
+from ast import parse
 import os, glob, shutil
 import stat
 import logging
@@ -9,6 +10,7 @@ import json
 from pathlib import Path
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
+import argparse
 
 logging.getLogger().setLevel(logging.DEBUG)
 from flask import Flask, abort, jsonify, request, make_response
@@ -22,6 +24,7 @@ import importlib
 import pkgutil
 
 MAX_FIO_JOBS=400
+nuttcp_port = 30001
 
 def import_submodules(package, recursive=True):
     """ Import all submodules of a module, recursively, including subpackages
@@ -345,5 +348,11 @@ def free_port(tool, port):
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()    
+    parser.add_argument("--flask_port", help="Set Flask port", type=int, default=5000)
+    parser.add_argument("--nuttcp_port", help="Set nuttcp port", type=int, default=30001)
+    args = parser.parse_args()    
+    nuttcp_port = args.nuttcp_port
+
     load_config()    
-    app.run('0.0.0.0')
+    app.run('0.0.0.0', port=args.flask_port)
