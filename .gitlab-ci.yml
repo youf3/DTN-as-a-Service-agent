@@ -1,5 +1,5 @@
-image: python:3.6.10-slim
-
+image: gcr.io/kaniko-project/executor:debug
+   
 stages:
     - build
     - test

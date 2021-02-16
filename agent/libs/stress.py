@@ -5,7 +5,7 @@ import sys, os
 
 class stress(TransferTools):   
 
-    fio_running_thread = None
+    running_thread = None
 
     def run_sender(self, srcfile, **optional_args):
         raise NotImplementedError
@@ -46,23 +46,23 @@ class stress(TransferTools):
                 prev_time = prev_time + duration
         
         proc = subprocess.Popen(['fio', 'bench.fio'], stdout = sys.stdout, stderr = sys.stdout)
-        stress.fio_running_thread = proc
+        stress.running_thread = proc
         return {'result': True}
 
     @classmethod
     def poll_progress(cls, **optional_args):        
-        if stress.fio_running_thread == None:
+        if stress.running_thread == None:
             raise Exception('stress is not running')
 
-        stress.fio_running_thread.communicate(timeout=None)        
+        stress.running_thread.communicate(timeout=None)        
         
     @classmethod
     def cleanup(cls):
-        logging.debug('cleaning up thread {}'.format(stress.fio_running_thread.pid))
+        logging.debug('cleaning up thread {}'.format(stress.running_thread.pid))
         try:
-            TransferTools.kill_proc_tree(stress.fio_running_thread.pid)
-            stress.fio_running_thread.communicate()
+            TransferTools.kill_proc_tree(stress.running_thread.pid)
+            stress.running_thread.communicate()
         finally:
             if os.path.exists('bench.fio'): os.remove('bench.fio')
-            stress.fio_running_thread = None
+            stress.running_thread = None
         

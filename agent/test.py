@@ -436,8 +436,9 @@ class AgentTest(TestCase):
                 
             },
             'file':'disk0/fiotest',
-            'size' : '100M',
-            'address' : ''
+            'size' : '1G',
+            'address' : '',
+            'iomode' : 'read'
         }
         response = self.client.post('/receiver/stress', json=data)
         result = response.get_json()
