@@ -126,7 +126,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '6.0'
+        assert receiver_counter == '8.0'
 
         cport = result.pop('cport')
 
@@ -441,19 +441,56 @@ class AgentTest(TestCase):
             'iomode' : 'read'
         }
         response = self.client.post('/receiver/stress', json=data)
-        result = response.get_json()
+        result = response.get_json()        
         assert result.pop('result') == True
+        assert isinstance(result['index'], int)
 
-        response = self.client.get('/stress/poll', json={})
-        result = response.get_json()
+        # response = self.client.get('/stress/poll', json=result)
+        # result = response.get_json()
+        # assert response.status_code == 200
+
+        response = self.client.get('/cleanup/stress')        
+        assert response.status_code == 200
+
+        response = self.client.get('/stress/poll', json=data)
+        assert response.status_code == 400
+
+
+    def test_multiple_fio(self):        
+        data = {
+            'sequence' : {
+                0: '0',
+            },
+            'file':'disk0/fiotest1',
+            'size' : '1G',
+            'address' : '',
+            'iomode' : 'read'
+        }
+        response = self.client.post('/receiver/stress', json=data)
+        result1 = response.get_json()        
+        assert result1.pop('result') == True
+        assert isinstance(result1['index'], int)
+
+        data['file'] = 'disk0/fiotest2'
+
+        response = self.client.post('/receiver/stress', json=data)
+        result2 = response.get_json()        
+        assert result2.pop('result') == True
+        assert isinstance(result2['index'], int)
+
+        response = self.client.get('/stress/poll', json=result1)
+        #result = response.get_json()
+        assert response.status_code == 200
+
+        response = self.client.get('/stress/poll', json=result2)
+        #result = response.get_json()
         assert response.status_code == 200
 
         response = self.client.get('/cleanup/stress')        
-        # assert response.status_code == 200
+        assert response.status_code == 200
 
         # response = self.client.get('/stress/poll', json={})
         # assert response.status_code == 400
-
     # def test_stress_cpu(self):        
     #     data = {            
     #         'cpu' : {
