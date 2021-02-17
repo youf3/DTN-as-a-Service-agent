@@ -10,7 +10,7 @@ class stress(TransferTools):
 
     def run_sender(self, srcfile, **optional_args):
         # raise NotImplementedError
-        return {'result': True}
+        return {'result': True, 'size' : os.path.getsize(srcfile)}
 
     def free_port(self, port, **optional_args):
         threads = stress.running_threads

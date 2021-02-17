@@ -485,6 +485,7 @@ class AgentTest(TestCase):
         response = self.client.post('/sender/stress', json=data)
         result = response.get_json()
         assert result.pop('result') == True 
+        assert result.pop('size') == 10485760
 
         response = self.client.post('/receiver/stress', json=data)
         result1 = response.get_json()        
