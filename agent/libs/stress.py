@@ -9,11 +9,15 @@ class stress(TransferTools):
     proc_index = 0
 
     def run_sender(self, srcfile, **optional_args):
-        raise NotImplementedError
+        # raise NotImplementedError
         pass
 
     def free_port(self, port, **optional_args):
-        raise NotImplementedError
+        threads = stress.running_threads
+        err_thread = threads.pop(port)
+        err_thread[0].kill()
+        err_thread[0].kill()
+        err_thread[0].communicate()
         pass
 
     def run_receiver(self, address, dstfile, **optional_args):               
@@ -58,8 +62,14 @@ class stress(TransferTools):
     def poll_progress(cls, **optional_args):
         
         if 'cport' not in optional_args:
+            logging.error('cport (index) is required')
             raise Exception('cport (index) is required')
+        elif 'node' not in optional_args:
+            logging.error('Node not found')
+            raise Exception('Node not found')
 
+        if 'node' == 'sender':
+            return
         logging.debug('polling fio index {}'.format(optional_args['cport']))
 
         if len(stress.running_threads) < 1 or optional_args['cport'] not in stress.running_threads:
