@@ -443,7 +443,7 @@ class AgentTest(TestCase):
         response = self.client.post('/receiver/stress', json=data)
         result = response.get_json()        
         assert result.pop('result') == True
-        assert isinstance(result['index'], int)
+        assert isinstance(result['cport'], int)
 
         # response = self.client.get('/stress/poll', json=result)
         # result = response.get_json()
@@ -469,14 +469,14 @@ class AgentTest(TestCase):
         response = self.client.post('/receiver/stress', json=data)
         result1 = response.get_json()        
         assert result1.pop('result') == True
-        assert isinstance(result1['index'], int)
+        assert isinstance(result1['cport'], int)
 
         data['file'] = 'disk0/fiotest2'
 
         response = self.client.post('/receiver/stress', json=data)
         result2 = response.get_json()        
         assert result2.pop('result') == True
-        assert isinstance(result2['index'], int)
+        assert isinstance(result2['cport'], int)
 
         response = self.client.get('/stress/poll', json=result1)
         #result = response.get_json()

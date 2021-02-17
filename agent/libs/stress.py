@@ -52,20 +52,22 @@ class stress(TransferTools):
         proc = subprocess.Popen(['fio', '{}.fio'.format(stress.proc_index)], stdout = sys.stdout, stderr = sys.stdout)
         stress.running_threads[stress.proc_index] = proc
         stress.proc_index += 1
-        return {'result': True, 'index' : stress.proc_index-1}
+        return {'result': True, 'cport' : stress.proc_index-1}
 
     @classmethod
     def poll_progress(cls, **optional_args):
-        logging.debug('polling fio index {}'.format(optional_args['index']))
-        if 'index' not in optional_args:
-            raise Exception('index is required')
+        
+        if 'cport' not in optional_args:
+            raise Exception('cport (index) is required')
 
-        if len(stress.running_threads) < 1 or optional_args['index'] not in stress.running_threads:
+        logging.debug('polling fio index {}'.format(optional_args['cport']))
+
+        if len(stress.running_threads) < 1 or optional_args['cport'] not in stress.running_threads:
             raise Exception('stress is not running')
 
-        stress.running_threads[optional_args['index']].communicate(timeout=None)
-        del stress.running_threads[optional_args['index']]
-        os.remove('{}.fio'.format(optional_args['index']))
+        stress.running_threads[optional_args['cport']].communicate(timeout=None)
+        del stress.running_threads[optional_args['cport']]
+        os.remove('{}.fio'.format(optional_args['cport']))
         
     @classmethod
     def cleanup(cls):
