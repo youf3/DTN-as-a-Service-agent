@@ -494,15 +494,28 @@ class AgentTest(TestCase):
         assert result2.pop('result') == True
         assert isinstance(result2['cport'], int)
 
+
+        result1['node'] = 'sender'
+        response = self.client.get('/fio/poll', json=result1)
+        result = response.get_json()
+        assert response.status_code == 200
+        assert result == 0
+
+        result1['dstfile'] = 'disk0/fiotest1'
         result1['node'] = 'receiver'        
         response = self.client.get('/fio/poll', json=result1)
-        #result = response.get_json()
+        result = response.get_json()
         assert response.status_code == 200
+        assert result[0] == 0
+        assert result[1] == 10485760
 
         result2['node'] = 'receiver'
+        result2['dstfile'] = 'disk0/fiotest2'
         response = self.client.get('/fio/poll', json=result2)
-        #result = response.get_json()
+        result = response.get_json()
         assert response.status_code == 200
+        assert result[0] == 0
+        assert result[1] == 10485760
 
         response = self.client.get('/cleanup/fio')        
         assert response.status_code == 200

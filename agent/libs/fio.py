@@ -53,15 +53,21 @@ class fio(TransferTools):
             logging.error('Node not found')
             raise Exception('Node not found')
 
-        if 'node' == 'sender':
-            return
+        if optional_args['node'] == 'sender':
+            return 0
         logging.debug('polling fio index {}'.format(optional_args['cport']))
 
         if len(fio.running_threads) < 1 or optional_args['cport'] not in fio.running_threads:
             raise Exception('fio is not running')
 
-        fio.running_threads[optional_args['cport']].communicate(timeout=None)
-        del fio.running_threads[optional_args['cport']]        
+        proc = fio.running_threads[optional_args['cport']]
+        proc.communicate(timeout=None)
+        del fio.running_threads[optional_args['cport']]
+
+        if optional_args['dstfile'] == None:
+            return proc.returncode, None
+        else:    
+            return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))        
         
     @classmethod
     def cleanup(cls):
