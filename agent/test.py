@@ -470,15 +470,11 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result == 0 
 
-        data = {
-            'sequence' : {
-                0: '0',
-            },
-            'file':'disk0/fiotest1',
-            'size' : '1G',
+        data = {        
+            'file':'disk0/fiotest1',            
             'address' : '',
             'iomode' : 'read',            
-            'blocksize' : 65535
+            'blocksize' : 10
         }
 
         response = self.client.post('/sender/fio', json=data)
