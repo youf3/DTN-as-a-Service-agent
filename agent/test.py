@@ -111,7 +111,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         sender_counter = get_prom_metric('daas_agent_sender_total{status="200"}', data)
-        assert sender_counter == '5.0'
+        assert sender_counter == '6.0'
 
         result['file'] = 'hello_world2'
         result['address'] = '127.0.0.1'
@@ -443,7 +443,7 @@ class AgentTest(TestCase):
         response = self.client.post('/receiver/stress', json=data)
         result = response.get_json()        
         assert result.pop('result') == True
-        assert isinstance(result['index'], int)
+        assert isinstance(result['cport'], int)
 
         # response = self.client.get('/stress/poll', json=result)
         # result = response.get_json()
@@ -452,11 +452,25 @@ class AgentTest(TestCase):
         response = self.client.get('/cleanup/stress')        
         assert response.status_code == 200
 
-        response = self.client.get('/stress/poll', json=data)
+        result['node'] = 'receiver'
+        response = self.client.get('/stress/poll', json=result)
         assert response.status_code == 400
 
 
-    def test_multiple_fio(self):        
+    def test_multiple_fio(self):
+
+        data = {
+            'disk0/fiotest1' : {                
+                'size' : '10M'
+            },
+            'disk0/fiotest2' : {                
+                'size' : '10M'
+            }
+        }  
+        response = self.client.post('/create_file/', json=data)
+        result = response.get_json()
+        assert result == 0 
+
         data = {
             'sequence' : {
                 0: '0',
@@ -464,24 +478,32 @@ class AgentTest(TestCase):
             'file':'disk0/fiotest1',
             'size' : '1G',
             'address' : '',
-            'iomode' : 'read'
+            'iomode' : 'read',            
+            'blocksize' : 65535
         }
+
+        response = self.client.post('/sender/stress', json=data)
+        result = response.get_json()
+        assert result.pop('result') == True 
+
         response = self.client.post('/receiver/stress', json=data)
         result1 = response.get_json()        
         assert result1.pop('result') == True
-        assert isinstance(result1['index'], int)
+        assert isinstance(result1['cport'], int)
 
         data['file'] = 'disk0/fiotest2'
 
         response = self.client.post('/receiver/stress', json=data)
         result2 = response.get_json()        
         assert result2.pop('result') == True
-        assert isinstance(result2['index'], int)
+        assert isinstance(result2['cport'], int)
 
+        result1['node'] = 'receiver'        
         response = self.client.get('/stress/poll', json=result1)
         #result = response.get_json()
         assert response.status_code == 200
 
+        result2['node'] = 'receiver'
         response = self.client.get('/stress/poll', json=result2)
         #result = response.get_json()
         assert response.status_code == 200
