@@ -10,7 +10,7 @@ class stress(TransferTools):
 
     def run_sender(self, srcfile, **optional_args):
         # raise NotImplementedError
-        pass
+        return {'result': True}
 
     def free_port(self, port, **optional_args):
         threads = stress.running_threads
@@ -30,6 +30,11 @@ class stress(TransferTools):
             sequence_t = sorted([int(i) for i in optional_args['sequence']])
         except Exception:
             raise Exception('Sequence has to be numbers')
+
+        if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
+            blocksize = optional_args['blocksize']
+        else:
+            blocksize = 8192
         
         fsize = optional_args['size']
         iomode = 'write'
@@ -40,8 +45,8 @@ class stress(TransferTools):
 
         os.makedirs(os.path.dirname(dstfile), exist_ok=True)
         with open('{}.fio'.format(stress.proc_index), 'w') as fh:
-            fh.writelines('[global]\nname=fio-seq-write\nrw={}\nbs=1m\ndirect=1\nioengine=sync\niodepth=16'
-            '\ngroup_reporting=1\ntime_based\nfilename={}\nsize={}\n\n'.format(iomode,dstfile, fsize))
+            fh.writelines('[global]\nname=fio-seq-write\nrw={}\nbs={}k\ndirect=1\nioengine=sync\niodepth=16'
+            '\ngroup_reporting=1\ntime_based\nfilename={}\nsize={}\n\n'.format(iomode, blocksize, dstfile, fsize))
             prev_time = 0        
             for i in range(0, len(sequence_t)-1):
                 duration = sequence_t[i+1] - sequence_t[i]
