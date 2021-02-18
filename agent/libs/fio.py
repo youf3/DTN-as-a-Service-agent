@@ -10,7 +10,14 @@ class fio(TransferTools):
 
     def run_sender(self, srcfile, **optional_args):
         # raise NotImplementedError
-        return {'result': True, 'size' : os.path.getsize(srcfile)}
+
+        iomode = 'write'
+        if 'iomode' in optional_args:
+            if optional_args['iomode'].lower() != 'read' and optional_args['iomode'].lower() != 'write':
+                raise Exception('io mode has to be read or write')
+            iomode = optional_args['iomode']
+        
+        return {'result': True, 'size' : os.path.getsize(srcfile), 'iomode': iomode}
 
     def run_receiver(self, address, dstfile, **optional_args):               
         logging.debug('Running fio test')
