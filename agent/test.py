@@ -442,8 +442,7 @@ class AgentTest(TestCase):
         }
         response = self.client.post('/receiver/stress', json=data)
         result = response.get_json()        
-        assert result.pop('result') == True
-        assert isinstance(result['cport'], int)
+        assert result.pop('result') == True       
 
         # response = self.client.get('/stress/poll', json=result)
         # result = response.get_json()
@@ -471,44 +470,56 @@ class AgentTest(TestCase):
         result = response.get_json()
         assert result == 0 
 
-        data = {
-            'sequence' : {
-                0: '0',
-            },
-            'file':'disk0/fiotest1',
-            'size' : '1G',
+        data = {        
+            'file':'disk0/fiotest1',            
             'address' : '',
             'iomode' : 'read',            
-            'blocksize' : 65535
+            'blocksize' : 10
         }
 
-        response = self.client.post('/sender/stress', json=data)
+        response = self.client.post('/sender/fio', json=data)
         result = response.get_json()
         assert result.pop('result') == True 
+        assert result.pop('size') == 10485760
 
-        response = self.client.post('/receiver/stress', json=data)
+        response = self.client.post('/receiver/fio', json=data)
         result1 = response.get_json()        
         assert result1.pop('result') == True
         assert isinstance(result1['cport'], int)
 
         data['file'] = 'disk0/fiotest2'
 
-        response = self.client.post('/receiver/stress', json=data)
+        response = self.client.post('/receiver/fio', json=data)
         result2 = response.get_json()        
         assert result2.pop('result') == True
         assert isinstance(result2['cport'], int)
 
-        result1['node'] = 'receiver'        
-        response = self.client.get('/stress/poll', json=result1)
-        #result = response.get_json()
+        response = self.client.get('/free_port/fio/1')
         assert response.status_code == 200
+
+        result1['node'] = 'sender'
+        response = self.client.get('/fio/poll', json=result1)
+        result = response.get_json()
+        assert response.status_code == 200
+        assert result == 0
+
+        result1['dstfile'] = 'disk0/fiotest1'
+        result1['node'] = 'receiver'        
+        response = self.client.get('/fio/poll', json=result1)
+        result = response.get_json()
+        assert response.status_code == 200
+        assert result[0] == 0
+        assert result[1] == 10485760
 
         result2['node'] = 'receiver'
-        response = self.client.get('/stress/poll', json=result2)
-        #result = response.get_json()
-        assert response.status_code == 200
+        result2['dstfile'] = 'disk0/fiotest2'
+        response = self.client.get('/fio/poll', json=result2)
+        result = response.get_json()
+        assert response.status_code == 400
+        # assert result[0] == 0
+        # assert result[1] == 10485760
 
-        response = self.client.get('/cleanup/stress')        
+        response = self.client.get('/cleanup/fio')        
         assert response.status_code == 200
 
         # response = self.client.get('/stress/poll', json={})
