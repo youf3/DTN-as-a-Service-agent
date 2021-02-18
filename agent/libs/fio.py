@@ -12,14 +12,6 @@ class fio(TransferTools):
         # raise NotImplementedError
         return {'result': True, 'size' : os.path.getsize(srcfile)}
 
-    def free_port(self, port, **optional_args):
-        threads = fio.running_threads
-        err_thread = threads.pop(port)
-        err_thread[0].kill()
-        err_thread[0].kill()
-        err_thread[0].communicate()
-        pass
-
     def run_receiver(self, address, dstfile, **optional_args):               
         logging.debug('Running fio test')
         logging.debug('args {}'.format(optional_args))        
@@ -42,6 +34,15 @@ class fio(TransferTools):
         fio.running_threads[fio.proc_index] = proc
         fio.proc_index += 1
         return {'result': True, 'cport' : fio.proc_index-1}
+
+    @classmethod
+    def free_port(cls, port, **optional_args):
+        threads = fio.running_threads
+        err_thread = threads.pop(port)
+        err_thread.kill()
+        err_thread.kill()
+        err_thread.communicate()
+        pass
 
     @classmethod
     def poll_progress(cls, **optional_args):
