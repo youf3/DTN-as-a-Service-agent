@@ -474,7 +474,7 @@ class AgentTest(TestCase):
             'file':'disk0/fiotest1',            
             'address' : '',
             'iomode' : 'read',            
-            'blocksize' : 10
+            'blocksize' : 1024
         }
 
         response = self.client.post('/sender/fio', json=data)
