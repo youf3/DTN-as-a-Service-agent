@@ -407,10 +407,10 @@ class AgentTest(TestCase):
         result = float(response.get_json()['latency'])
         assert result is not None
 
-    def test_trim(self):
-        response = self.client.get('/trim')
-        result = response.get_json()       
-        assert result['returncode'] == 0
+    # def test_trim(self):
+    #     response = self.client.get('/trim')
+    #     result = response.get_json()       
+    #     assert result['returncode'] == 0
 
     def test_cleanup(self):
         data = {            
