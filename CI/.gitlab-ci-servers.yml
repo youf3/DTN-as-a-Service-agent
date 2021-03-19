@@ -11,3 +11,17 @@ deploy_r740xd2:
       - r740xd2
     variables:
       VOLS_TO_MOUNT: -v /data/disk1:/data/disk0 -v /data/disk4:/data/disk1 -v /data/disk5:/data/disk2 -v /data/disk12:/data/disk3 -v /data/disk13:/data/disk4 -v /data/disk14:/data/disk5 -v /data/disk15:/data/disk6
+
+24NVMeDTN1:
+    extends: .deploy_image
+    tags:
+      - 24NVMeDTN1
+    variables:
+      VOLS_TO_MOUNT: -v /bigdisk:/data 
+
+24NVMeDTN2:
+    extends: .deploy_image
+    tags:
+      - 24NVMeDTN2
+    variables:
+      VOLS_TO_MOUNT: -v /bigdisk:/data 
