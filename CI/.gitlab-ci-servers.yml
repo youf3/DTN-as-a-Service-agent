@@ -1,9 +1,9 @@
-deploy_r740xd1:
-    extends: .deploy_image
-    tags:
-      - r740xd1
-    variables:
-      VOLS_TO_MOUNT: -v /data/disk8:/data/disk0 -v /data/disk9:/data/disk1 -v /data/disk10:/data/disk2 -v /data/disk11:/data/disk3 -v /data/disk12:/data/disk4 -v /data/disk13:/data/disk5 -v /data/disk14:/data/disk6 -v /data/disk15:/data/disk7
+# deploy_r740xd1:
+#     extends: .deploy_image
+#     tags:
+#       - r740xd1
+#     variables:
+#       VOLS_TO_MOUNT: -v /data/disk8:/data/disk0 -v /data/disk9:/data/disk1 -v /data/disk10:/data/disk2 -v /data/disk11:/data/disk3 -v /data/disk12:/data/disk4 -v /data/disk13:/data/disk5 -v /data/disk14:/data/disk6 -v /data/disk15:/data/disk7
 
 deploy_r740xd2:
     extends: .deploy_image
