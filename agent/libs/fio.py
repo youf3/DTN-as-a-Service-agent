@@ -8,6 +8,9 @@ class fio(TransferTools):
     running_threads = {}
     proc_index = 0
 
+    def __init__(self, **optional_args) -> None:
+        return 
+
     def run_sender(self, srcfile, **optional_args):
         # raise NotImplementedError
 
@@ -78,7 +81,7 @@ class fio(TransferTools):
             return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))        
         
     @classmethod
-    def cleanup(cls):
+    def cleanup(cls, **optional_args):
         logging.debug('cleaning up fio threads')
         try:
             for _, proc in fio.running_threads.items():

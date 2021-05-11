@@ -7,6 +7,8 @@ class stress(TransferTools):
 
     running_thread = None
 
+    def __init__(self, **optional_args) -> None: return                
+
     def run_sender(self, srcfile, **optional_args):
         raise NotImplementedError
         pass
@@ -53,7 +55,7 @@ class stress(TransferTools):
         stress.running_thread.communicate(timeout=None)        
         
     @classmethod
-    def cleanup(cls):
+    def cleanup(cls, **optional_args):
         logging.debug('cleaning up thread {}'.format(stress.running_thread.pid))
         TransferTools.kill_proc_tree(stress.running_thread.pid)
         stress.running_thread.communicate()

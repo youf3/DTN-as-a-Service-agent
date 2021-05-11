@@ -41,7 +41,7 @@ class TransferTools(ABC):
 
     @classmethod
     @abstractmethod
-    def cleanup(cls):
+    def cleanup(cls, **optional_args):
         pass
 
     def bind_proc_to_numa(self, proc, numa_num):
