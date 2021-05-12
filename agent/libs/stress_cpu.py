@@ -7,6 +7,9 @@ class stress_cpu(TransferTools):
 
     sysbench_running_thread = None
 
+    def __init__(self, **optional_args) -> None:
+        return
+
     def run_sender(self, srcfile, **optional_args):
         raise NotImplementedError
         pass
@@ -47,7 +50,7 @@ class stress_cpu(TransferTools):
         stress_cpu.sysbench_running_thread.communicate(timeout=None)
         
     @classmethod
-    def cleanup(cls):
+    def cleanup(cls, **optional_args):
         logging.debug('cleaning up thread {}'.format(stress_cpu.sysbench_running_thread.pid))
         try:
             TransferTools.kill_proc_tree(stress_cpu.sysbench_running_thread.pid)

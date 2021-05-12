@@ -6,8 +6,19 @@ import sys, os, time
 class nuttcp(TransferTools):
     running_svr_threads = {}
     running_cli_threads = {}
-    cports = list(range(30001, 31000))
-    dports = list(range(31001, 32000))
+    # cports = list(range(nuttcp_port, nuttcp_port+ 999))
+    # dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
+    cports = []
+    dports = []    
+    
+    def __init__(self, numa_scheme = 1, nuttcp_port=30001) -> None:        
+        super().__init__(numa_scheme = numa_scheme)
+        if nuttcp.cports == []:
+            self.reset_ports(nuttcp_port=nuttcp_port)
+
+    def reset_ports(self, nuttcp_port):
+        nuttcp.cports = list(range(nuttcp_port, nuttcp_port+ 999))
+        nuttcp.dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
 
     def run_sender(self, srcfile, **optional_args):
         cport = nuttcp.cports.pop()
@@ -166,7 +177,7 @@ class nuttcp(TransferTools):
             raise Exception('Node has to be either sender or receiver')        
 
     @classmethod
-    def cleanup(cls):
+    def cleanup(cls, **optional_args):
         for i,j in nuttcp.running_svr_threads.items():
             j[0].kill()
             j[0].kill()
@@ -180,6 +191,7 @@ class nuttcp(TransferTools):
             j[0].communicate()
 
         nuttcp.running_cli_threads = {}
+        cls.reset_ports(cls, nuttcp_port = optional_args['nuttcp_port'])
 
-        nuttcp.cports = list(range(30001, 31000))
-        nuttcp.dports = list(range(31001, 32000))
+        # nuttcp.cports = list(range(nuttcp_port, nuttcp_port+ 999))
+        # nuttcp.dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))

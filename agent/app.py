@@ -266,9 +266,9 @@ def run_sender(tool):
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     
     if 'numa_scheme' in data:
-        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'])
+        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'], nuttcp_port = nuttcp_port)
     else:
-        tool_obj = target_tool_cls()
+        tool_obj = target_tool_cls(nuttcp_port = nuttcp_port)
 
     ret = tool_obj.run_sender(filename, **data)
     if not ret['result']:
@@ -302,9 +302,9 @@ def run_receiver(tool):
     tool_obj = target_tool_cls()
 
     if 'numa_scheme' in data:
-        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'])
+        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'], nuttcp_port = nuttcp_port)
     else:
-        tool_obj = target_tool_cls()
+        tool_obj = target_tool_cls(nuttcp_port = nuttcp_port)
 
     try:
         ret = tool_obj.run_receiver(address, filename, **data)
@@ -325,7 +325,7 @@ def cleanup(tool):
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
 
     try:        
-        retcode = target_tool_cls.cleanup()
+        retcode = target_tool_cls.cleanup(nuttcp_port=nuttcp_port)
         return jsonify(retcode)
     except Exception:
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
