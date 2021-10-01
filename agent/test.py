@@ -302,7 +302,7 @@ class AgentTest(TestCase):
         response = self.client.get('/metrics')
         data = response.data.decode()
         receiver_counter = get_prom_metric('daas_agent_receiver_total{status="200"}', data)
-        assert receiver_counter == '1.0'
+        assert receiver_counter == '2.0'
 
         response = self.client.get('/msrsync/poll', json={})
         
@@ -524,6 +524,41 @@ class AgentTest(TestCase):
 
         # response = self.client.get('/stress/poll', json={})
         # assert response.status_code == 400
+
+    def test_dd(self):
+
+        data = {
+            'hello_world' : {                
+                'size' : '100M'
+            }
+        }  
+        response = self.client.post('/create_file/', json=data)
+
+        data = {            
+            'file':'hello_world'            
+        }
+
+        response = self.client.post('/sender/dd', json=data)
+        data = response.get_json()
+
+        data['address'] = 'localhost'
+        data['file'] = 'hello_world2'
+
+        response = self.client.post('/receiver/dd', json=data)
+        result = response.get_json()        
+        assert result.pop('result') == True
+
+        result['node'] = 'receiver'
+        result['dstfile'] = 'hello_world2'
+        response = self.client.get('/dd/poll', json=result)        
+        assert response.status_code == 200
+
+        response = self.client.get('/cleanup/dd')        
+        assert response.status_code == 200
+        
+        response = self.client.get('/dd/poll', json=result)
+        assert response.status_code == 400
+
     # def test_stress_cpu(self):        
     #     data = {            
     #         'cpu' : {
