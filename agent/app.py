@@ -11,6 +11,11 @@ from pathlib import Path
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
 import argparse
+import secrets
+import socket
+import psutil
+import pwd
+import nvmet
 
 logging.getLogger().setLevel(logging.DEBUG)
 from flask import Flask, abort, jsonify, request, make_response
@@ -23,8 +28,14 @@ metrics.info('app_info', 'Agent service for StarLight DTN-as-a-Service')
 import importlib
 import pkgutil
 
+# import Diskmanager.py for NVMEoF functions
+sys.path.append("/DTN_Testing_Framework/lib")
+from DiskManager import disk_manager
+
 MAX_FIO_JOBS=400
 nuttcp_port = 30001
+
+orchestrator_registered = False
 
 def import_submodules(package, recursive=True):
     """ Import all submodules of a module, recursively, including subpackages
@@ -99,6 +110,58 @@ def commit_write(jobs):
         ret_code = subprocess.run(['fio', job], stderr=subprocess.PIPE, stdout=subprocess.PIPE)    
         os.remove(job)
     return ret_code
+
+def get_registration_data(given_addr, default_data_addr=None, default_interface=None):
+    # we need hostname, management IP, dataplane IP, dataplane interface
+    hostname = socket.gethostname()
+    data_addr = app.config.get("DATA_ADDR", default_data_addr)
+    data_int = app.config.get("DATA_INTERFACE", default_interface)
+    all_addrs = psutil.net_if_addrs()
+    if not data_addr and not data_int:
+        # figure out dataplane interface by fastest interface
+        interfaces = psutil.net_if_stats()
+        interfaces = sorted([(interf, interfaces[interf].speed) for interf in interfaces 
+                if interfaces[interf].isup and interf != 'lo'], key=lambda k: k[1])
+        if not interfaces:
+            raise ValueError("No valid interfaces found for dataplane")
+        data_int = interfaces[-1][0] # fastest
+    if not data_int and data_addr:
+        # figure out dataplane interface from given address
+        for name, sniclist in all_addrs.items():
+            if data_addr in [snic.address for snic in sniclist]:
+                data_int = name
+                break
+        if not data_int:
+            raise ValueError("Dataplane address not found")
+    if not data_addr and data_int:
+        # figure out dataplane address from given interface
+        if data_int not in all_addrs:
+            raise ValueError(f"Invalid data interface {data_int}")
+        data_addr = all_addrs.get(data_int)[0].address
+    
+    man_addr = app.config.get("MAN_ADDR")
+    if not man_addr:
+        man_addr = given_addr
+
+    username = pwd.getpwuid(os.getuid()).pw_name
+    # TODO generate auth token and pass it to the orchestrator
+    return {"name": hostname, "man_addr": man_addr, "data_addr": data_addr, "interface": data_int, "username": username}
+
+def fix_dm_mounts(diskmanager):
+    # Fix device names so mounts work properly
+    # first, get all NVME block devices
+    block_devices = [blk for blk in os.listdir('/dev') if blk.startswith('nvme')]
+    for idx, device in enumerate(diskmanager.devices):
+        # get nvme drives with tcp transport
+        if device.get('transport') == 'tcp':
+            # find the matching block device and rewrite ['device']
+            for blk in block_devices:
+                if blk.startswith(device.get('raw_dev')) and 'p' in blk:
+                    device['device'] = f"/dev/{blk}"
+                    diskmanager.devices[idx] = device
+                    # only apply the first partition
+                    break
+    return diskmanager
 
 @app.route('/files/', defaults={'path': ''})
 @app.route('/files/<path:path>')
@@ -254,7 +317,7 @@ def run_sender(tool):
         filename = None       
 
     else:
-        filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))
+        filename = os.path.join(app.config['FILE_LOC'], data.get('file'))
 
         if not os.path.exists(filename): 
             abort(make_response(jsonify(message="file is not found"), 404))    
@@ -346,6 +409,116 @@ def free_port(tool, port):
         return jsonify(retcode)
     except Exception:
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+
+@app.route('/nvme/setup', methods=['POST'])
+def nvme_setup():
+    data = request.get_json()
+    ip = data.get('addr')
+    numa = int(data.get('numa', 1))
+    transport = data.get('transport', 'tcp')
+    null_blk = data.get('null_blk', 0)
+    inline_data_size = data.get('inline_data_size', 16384)
+    dm = disk_manager(nvmeof_numa=numa)
+    # check for an existing port first
+    # TODO port ID hardcoded
+    try:
+        nvmet.Port(mode='lookup', portid=1)
+    except nvmet.nvme.CFSNotFound:        
+        dm.create_nvmeof(numa, ip, transport=transport, 
+            num_null_blk=null_blk, inline_data_size=inline_data_size)
+
+    devices =  [x for x in dm.devices if x['numa'] == numa or numa < 0]
+    return {"devices": devices}
+
+@app.route('/nvme/setup', methods=['DELETE'])
+def nvme_stop():
+    # TODO move this functionality into the DiskManager library
+    # remove subsystem and port
+    try:
+        existing_port = nvmet.Port(mode='lookup', portid=1)
+        existing_port.delete()
+        return {"result": "stopped"}
+    except nvmet.nvme.CFSNotFound:
+        return {"result": "not set up"}
+    except PermissionError as e:
+        return {"result": str(e)}, 403
+
+@app.route('/nvme/devices')
+def nvme_devices():
+    dm = disk_manager(nvmeof_numa=None)
+    dm.scan_nvme()
+    dm = fix_dm_mounts(dm) # quick patch device name for mounting
+    # also get mounted partitions
+    partitions = psutil.disk_partitions()
+    mountpoints = []
+    for idx, device in enumerate(dm.devices):
+        for partition in partitions:
+            if partition.device.startswith(device.get('device')):
+                mountpoints.append({"device": device.get('device'), "partition": partition.mountpoint})
+                dm.devices[idx]['mounted'] = partition.mountpoint
+    return {"devices": dm.devices, "mountpoints": mountpoints}
+
+@app.route('/nvme/connect', methods=['POST'])
+def nvme_connect():
+    data = request.get_json()
+    remote = data.get('remote_addr')
+    transport = data.get('transport', 'tcp')
+    mountpoint = data.get('mountpoint')
+    username = data.get('username')
+    numa = data.get('numa', 0)
+    fs = data.get('fs', 'xfs')
+
+    dm = disk_manager(nvmeof_numa=None, mountpoint=mountpoint)
+    nqns = dm.discover_nvmeof(remote, 4420)
+    dm.connect_nvmeof(remote, nqns, transport=transport)
+    if mountpoint:
+        # FIXME problem with mounting, device in /sys/class/nvme is different from /dev
+        #    Exception: mount: /data/nvme/disk1: special device /dev/nvme1c1n1 does not exist
+
+        # get nvme drive with tcp transport
+        remote_id, remote_device = [(idx, dev) for idx, dev in enumerate(dm.devices) if dev.get('transport') == 'tcp'][0]
+        # find the first partition - hacky but it works
+        remote_partitions = [partition for partition in os.listdir('/dev')
+                if remote_device.get('raw_dev') in partition and 'p' in partition]
+        if remote_partitions:
+            # in case the remote drive is not formatted
+            remote_device['device'] = f"/dev/{remote_partitions[0]}"
+            try:
+                dm.mount(remote_device, remote_id)
+            except Exception as e:
+                return {"devices": dm.devices, "nqn": nqns, "mount_error": str(e)}, 400
+
+    return {"devices": dm.devices, "nqn": nqns, "mountpoint": mountpoint}
+
+@app.route('/nvme/connect', methods=['DELETE'])
+def nvme_disconnect():
+    data = request.get_json()
+    dm = disk_manager()
+    # find the remote drive and unmount it
+    dm.scan_nvme()
+    dm = fix_dm_mounts(dm) # quick patch device name for mounting
+    remote_drives = [device for device in dm.devices if device.get('transport') == 'tcp']
+    if remote_drives:
+        dm.umount(remote_drives[0].get('device'))
+        dm.disconnect_nvmeof() # TODO determine nqn if not default
+        return "disconnected"
+
+@app.route('/register', methods=['POST'])
+def register_agent():
+    global orchestrator_registered
+    if orchestrator_registered:
+        # we are already registered with an orchestrator, fail immediately
+        abort(make_response(jsonify(message="Already registered with an orchestrator"), 400))
+
+    # TODO get a token from the orchestrator and keep it for authenticating other API calls
+
+    orchestrator_registered = True
+    # get address used to contact this DTN and use it as the management address
+    data = request.get_json()
+    addr = data.get("address")
+    override_data_addr = data.get("data_addr")
+    override_interface = data.get("interface")
+    return jsonify(get_registration_data(addr, override_data_addr, override_interface))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()    
