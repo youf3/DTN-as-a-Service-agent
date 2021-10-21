@@ -11,11 +11,13 @@ from pathlib import Path
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
 import argparse
-import secrets
+import hashlib
 import socket
 import psutil
 import pwd
 import nvmet
+from functools import wraps
+import jwt
 
 logging.getLogger().setLevel(logging.DEBUG)
 from flask import Flask, abort, jsonify, request, make_response
@@ -35,6 +37,7 @@ from DiskManager import disk_manager
 MAX_FIO_JOBS=400
 nuttcp_port = 30001
 
+ORCHESTRATOR_REGISTRATION_PATH = "/orchestrator_registered"
 orchestrator_registered = False
 
 def import_submodules(package, recursive=True):
@@ -65,6 +68,14 @@ def load_config():
         if 'FILE_LOC' not in app.config:
             logging.debug('FILE_LOC is not set, using default /data')
             app.config['FILE_LOC'] = '/data'
+
+    # also check for a orchestrator_registered file
+    global orchestrator_registered
+    try:
+        with open(ORCHESTRATOR_REGISTRATION_PATH) as f:
+            orchestrator_registered = f.readline().strip()
+    except:
+        orchestrator_registered = False
 
 def get_type(mode):
     if stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
@@ -145,7 +156,9 @@ def get_registration_data(given_addr, default_data_addr=None, default_interface=
 
     username = pwd.getpwuid(os.getuid()).pw_name
     # TODO generate auth token and pass it to the orchestrator
-    return {"name": hostname, "man_addr": man_addr, "data_addr": data_addr, "interface": data_int, "username": username}
+    # Note: this is NOT SECURE if not passed through https
+    return {"name": hostname, "man_addr": man_addr, "data_addr": data_addr,
+            "interface": data_int, "username": username, "jwt_token": generate_token()}
 
 def fix_dm_mounts(diskmanager):
     # Fix device names so mounts work properly
@@ -163,9 +176,40 @@ def fix_dm_mounts(diskmanager):
                     break
     return diskmanager
 
+def generate_token():
+    # generate a JWT with the hostname (can't be changed on client) and a secret (can be updated)
+    composite_secret = socket.gethostname() + app.config.get("API_SECRET", "defaultsecretnotsecure")
+    # sha1 hash so (configured) plaintext secret doesn't get sent out
+    return hashlib.sha1(bytes(composite_secret, encoding='ascii')).hexdigest()
+
+def authorize(f):
+    @wraps(f)
+    def check_orchestrator_token(*args, **kwargs):
+        if not request.headers.get('Authorization'):
+            abort(401)
+        user = None
+        try:
+            jwtdata = request.headers['Authorization']
+            jwtdata = str(jwtdata).replace('Bearer ', '')
+            # TODO future releases can pass Jupyter user to the agent for permissions checks
+            decoded = jwt.decode(jwtdata, generate_token(), 'HS256')
+            #user = decoded.get('sub')
+            #start_time = decoded.get('iat')
+        except jwt.exceptions.InvalidSignatureError:
+            logging.warn(f"Invalid JWT token")
+            abort(401)
+        except Exception as e:
+            logging.error(f"Auth error: {str(e)}")
+            abort(401)
+
+        #return f(user, *args, **kwargs)
+        return f(*args, **kwargs)
+    return check_orchestrator_token
+
 @app.route('/files/', defaults={'path': ''})
 @app.route('/files/<path:path>')
 @metrics.do_not_track()
+@authorize
 def list_files(path):
     try:
         contents = get_files(os.path.join(app.config['FILE_LOC'], path))
@@ -177,6 +221,7 @@ def list_files(path):
 
 @app.route('/create_file/', methods=['POST'])
 @metrics.counter('daas_agent_file_create', 'Number of files created')
+@authorize
 def create_file():
 
     fio_job_files = glob.glob("agent/scripts/*.fio")
@@ -210,6 +255,7 @@ def create_file():
 
 @app.route('/create_dir/', methods=['POST'])
 @metrics.counter('daas_agent_dir_create', 'Number of dir created')
+@authorize
 def create_dir():
     dirs = request.get_json()
 
@@ -221,6 +267,7 @@ def create_dir():
 
 @app.route('/file/<path:path>', methods=['DELETE'])
 @metrics.counter('daas_agent_file_delete', 'Number of files deleted')
+@authorize
 def delete_file(path):
 
     #TODO : check user permission
@@ -255,6 +302,7 @@ def delete_file(path):
 
 @app.route('/trim', methods=['GET'])
 @metrics.counter('daas_agent_trim', 'Number of time NVME trim issued')
+@authorize
 def trim():
     proc = subprocess.run(['fstrim', '-va'])
     return {'returncode' : proc.returncode}
@@ -267,6 +315,7 @@ def check_running():
 
 @app.route('/ping/<string:dst_ip>')
 @metrics.do_not_track()
+@authorize
 def ping_host(dst_ip):
     logging.debug('pinging {}'.format(dst_ip))
     delay = ping3.ping(dst_ip)
@@ -275,6 +324,7 @@ def ping_host(dst_ip):
 
 @app.route('/tools')
 @metrics.do_not_track()
+@authorize
 def get_transfer_tools():    
     return jsonify(tools)
 
@@ -282,6 +332,7 @@ def get_transfer_tools():
 @metrics.counter('daas_agent_polling', 'Number of polling for transfer',
 labels={'status': lambda r: r.status_code})
 @metrics.gauge('daas_agent_num_transfers', 'Number of transfers waiting to be finished')
+@authorize
 def poll(tool):
     data = request.get_json()
 
@@ -306,6 +357,7 @@ def poll(tool):
 @app.route('/sender/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',
 labels={'status': lambda r: r.status_code})
+@authorize
 def run_sender(tool):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
@@ -342,6 +394,7 @@ def run_sender(tool):
 @app.route('/receiver/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_receiver', 'Number of receiver created',
 labels={'status': lambda r: r.status_code})
+@authorize
 def run_receiver(tool):
     if tool not in tools: abort(404)
 
@@ -379,6 +432,7 @@ def run_receiver(tool):
 @app.route('/cleanup/<string:tool>', methods=['GET'])
 @metrics.counter('daas_agent_cleanup', 'Number of cleanup',
 labels={'status': lambda r: r.status_code})
+@authorize
 def cleanup(tool):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
@@ -396,6 +450,7 @@ def cleanup(tool):
 @app.route('/free_port/<string:tool>/<int:port>', methods=['GET'])
 @metrics.counter('daas_agent_free_port', 'Number of freeing port',
 labels={'status': lambda r: r.status_code})
+@authorize
 def free_port(tool, port):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
@@ -411,6 +466,7 @@ def free_port(tool, port):
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 @app.route('/nvme/setup', methods=['POST'])
+@authorize
 def nvme_setup():
     data = request.get_json()
     ip = data.get('addr')
@@ -431,6 +487,7 @@ def nvme_setup():
     return {"devices": devices}
 
 @app.route('/nvme/setup', methods=['DELETE'])
+@authorize
 def nvme_stop():
     # TODO move this functionality into the DiskManager library
     # remove subsystem and port
@@ -444,6 +501,7 @@ def nvme_stop():
         return {"result": str(e)}, 403
 
 @app.route('/nvme/devices')
+@authorize
 def nvme_devices():
     dm = disk_manager(nvmeof_numa=None)
     dm.scan_nvme()
@@ -459,6 +517,7 @@ def nvme_devices():
     return {"devices": dm.devices, "mountpoints": mountpoints}
 
 @app.route('/nvme/connect', methods=['POST'])
+@authorize
 def nvme_connect():
     data = request.get_json()
     remote = data.get('remote_addr')
@@ -491,6 +550,7 @@ def nvme_connect():
     return {"devices": dm.devices, "nqn": nqns, "mountpoint": mountpoint}
 
 @app.route('/nvme/connect', methods=['DELETE'])
+@authorize
 def nvme_disconnect():
     data = request.get_json()
     dm = disk_manager()
@@ -503,6 +563,7 @@ def nvme_disconnect():
         dm.disconnect_nvmeof() # TODO determine nqn if not default
         return "disconnected"
 
+# can't use the authorize decorator here
 @app.route('/register', methods=['POST'])
 def register_agent():
     global orchestrator_registered
@@ -510,15 +571,21 @@ def register_agent():
         # we are already registered with an orchestrator, fail immediately
         abort(make_response(jsonify(message="Already registered with an orchestrator"), 400))
 
-    # TODO get a token from the orchestrator and keep it for authenticating other API calls
-
-    orchestrator_registered = True
     # get address used to contact this DTN and use it as the management address
     data = request.get_json()
     addr = data.get("address")
     override_data_addr = data.get("data_addr")
     override_interface = data.get("interface")
-    return jsonify(get_registration_data(addr, override_data_addr, override_interface))
+    registration_data = get_registration_data(addr, override_data_addr, override_interface)
+
+    # Set the registered orchestrator and save it
+    orchestrator_registered = request.remote_addr
+    with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
+        f.write(orchestrator_registered)
+
+    # careful - get_registration_data returns a token that is used to authorize all other
+    # API calls.
+    return jsonify(registration_data)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()    
