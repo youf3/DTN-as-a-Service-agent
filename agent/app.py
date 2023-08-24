@@ -186,7 +186,7 @@ def generate_token():
 def authorize(f):
     @wraps(f)
     def check_orchestrator_token(*args, **kwargs):
-        if not request.headers.get('Authorization'):
+        if not request.headers.get('Authorization') and not SKIP_TOKEN_AUTH:
             abort(401)
         user = None
         try:
@@ -255,6 +255,23 @@ def create_file():
     ret = commit_write(jobs)
     return jsonify(ret.returncode)
 
+@app.route('/checksum/<path:path>')
+@metrics.do_not_track()
+@authorize
+def generate_checksum(path):
+    try:
+        contents = get_files(os.path.join(app.config['FILE_LOC'], path))
+        filelist = [f['name'] for f in contents if f['type'] == 'file']
+        checksum = ''
+        for chkfile in filelist:
+            chkfile = os.path.join(app.config['FILE_LOC'], path, chkfile)
+            checksum += hashlib.md5(open(chkfile, 'rb').read()).hexdigest()
+        return jsonify({'checksum': checksum, 'num_files': len(filelist)})
+    except PermissionError:
+        abort(403)
+    except FileNotFoundError as e:
+
+        abort(404)
 
 @app.route('/create_dir/', methods=['POST'])
 @metrics.counter('daas_agent_dir_create', 'Number of dir created')
