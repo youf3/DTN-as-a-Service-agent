@@ -1,0 +1,36 @@
+# example config.py file
+#
+# All fields are optional
+
+# FILE_LOC - default directory inside container for DTN data
+FILE_LOC = '/data'
+
+# SKIP_TOKEN_AUTH - if True, ignore token authentication (unauthenticated 
+# access will be allowed)
+SKIP_TOKEN_AUTH = False
+
+# API_SECRET - API secret used to generate the auth token.
+API_SECRET = 'defaultsecretnotsecure'
+
+# SINGLE_ORCHESTRATOR - if True, only allow a single orchestrator to administer
+# this agent. Otherwise, multiple orchestrators can manage this agent.
+SINGLE_ORCHESTRATOR = False
+
+# DATA_ADDR - Default data NIC address. Can still be overridden by the 
+# /register API call. Otherwise defaults to the address of the fastest
+# interface.
+#DATA_ADDR = '10.10.10.10'
+
+# DATA_INTERFACE - Default data interface. Can still be overridden by the
+# /register API call. Otherwise defaults to the fastest interface.
+#DATA_INTERFACE = 'eno1'
+
+# MAN_ADDR - Default management address. Defaults to the address used to
+# register this agent.
+#MAN_ADDR = '192.168.0.10'
+
+# AGENT_PORT - Port the agent should listen on.
+AGENT_PORT = 5000
+
+# NUTTCP_PORT - Starting port for nuttcp process allocation.
+NUTTCP_PORT = 30001

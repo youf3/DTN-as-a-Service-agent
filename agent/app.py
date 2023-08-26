@@ -19,7 +19,7 @@ import nvmet
 from functools import wraps
 import jwt
 
-logging.getLogger().setLevel(logging.DEBUG)
+#logging.getLogger().setLevel(logging.DEBUG)
 from flask import Flask, abort, jsonify, request, make_response
 app = Flask(__name__)
 
@@ -38,7 +38,6 @@ MAX_FIO_JOBS=400
 nuttcp_port = 30001
 
 ORCHESTRATOR_REGISTRATION_PATH = "/orchestrator_registered"
-SKIP_TOKEN_AUTH = True
 orchestrator_registered = False
 
 def import_submodules(package, recursive=True):
@@ -62,21 +61,33 @@ loaded_modules = import_submodules('libs', False)
 tools = [x.__name__ for x in TransferTools.__subclasses__()]
 
 def load_config():
-    try: app.config.from_envvar('CONF_FILE')
+    try: 
+        app.config.from_envvar('CONF_FILE')
     except RuntimeError:
-        pass
+        logging.debug("No config file found, using defaults")
     finally:
         if 'FILE_LOC' not in app.config:
             logging.debug('FILE_LOC is not set, using default /data')
             app.config['FILE_LOC'] = '/data'
+        if 'SKIP_TOKEN_AUTH' not in app.config:
+            app.config['SKIP_TOKEN_AUTH'] = False
+        if 'SINGLE_ORCHESTRATOR' not in app.config:
+            app.config["SINGLE_ORCHESTRATOR"] = False
 
     # also check for a orchestrator_registered file
     global orchestrator_registered
     try:
-        with open(ORCHESTRATOR_REGISTRATION_PATH) as f:
-            orchestrator_registered = f.readline().strip()
+        if app.config.get("SINGLE_ORCHESTRATOR"):
+            with open(ORCHESTRATOR_REGISTRATION_PATH) as f:
+                orchestrator_registered = f.readline().strip()
+        else:
+            orchestrator_registered = False
     except:
         orchestrator_registered = False
+
+    global nuttcp_port
+    if app.config.get("NUTTCP_PORT"):
+        nuttcp_port = app.config["NUTTCP_PORT"]
 
 def get_type(mode):
     if stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
@@ -186,7 +197,7 @@ def generate_token():
 def authorize(f):
     @wraps(f)
     def check_orchestrator_token(*args, **kwargs):
-        if not request.headers.get('Authorization') and not SKIP_TOKEN_AUTH:
+        if not request.headers.get('Authorization') and not app.config.get('SKIP_TOKEN_AUTH'):
             abort(401)
         user = None
         try:
@@ -198,11 +209,11 @@ def authorize(f):
             #start_time = decoded.get('iat')
         except jwt.exceptions.InvalidSignatureError:
             logging.warn(f"Invalid JWT token")
-            if not SKIP_TOKEN_AUTH:
+            if not app.config.get('SKIP_TOKEN_AUTH'):
                 abort(401)
         except Exception as e:
             logging.error(f"Auth error: {str(e)}")
-            if not SKIP_TOKEN_AUTH:
+            if not app.config.get('SKIP_TOKEN_AUTH'):
                 abort(401)
 
         #return f(user, *args, **kwargs)
@@ -587,7 +598,7 @@ def nvme_disconnect():
 @app.route('/register', methods=['POST'])
 def register_agent():
     global orchestrator_registered
-    if orchestrator_registered:
+    if app.config.get("SINGLE_ORCHESTRATOR") and orchestrator_registered:
         # we are already registered with an orchestrator, fail immediately
         abort(make_response(jsonify(message="Already registered with an orchestrator"), 400))
 
@@ -600,19 +611,14 @@ def register_agent():
 
     # Set the registered orchestrator and save it
     orchestrator_registered = request.remote_addr
-    with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
-        f.write(orchestrator_registered)
+    if app.config.get("SINGLE_ORCHESTRATOR"):
+        with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
+            f.write(orchestrator_registered)
 
     # careful - get_registration_data returns a token that is used to authorize all other
     # API calls.
     return jsonify(registration_data)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()    
-    parser.add_argument("--flask_port", help="Set Flask port", type=int, default=5000)
-    parser.add_argument("--nuttcp_port", help="Set nuttcp port", type=int, default=30001)
-    args = parser.parse_args()    
-    nuttcp_port = args.nuttcp_port
-
-    load_config()    
-    app.run('0.0.0.0', port=args.flask_port)
+    load_config()
+    app.run('0.0.0.0', port=app.config.get("AGENT_PORT", 5000))
