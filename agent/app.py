@@ -11,8 +11,15 @@ from pathlib import Path
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
 import argparse
+import hashlib
+import socket
+import psutil
+import pwd
+import nvmet
+from functools import wraps
+import jwt
 
-logging.getLogger().setLevel(logging.DEBUG)
+#logging.getLogger().setLevel(logging.DEBUG)
 from flask import Flask, abort, jsonify, request, make_response
 app = Flask(__name__)
 
@@ -23,8 +30,15 @@ metrics.info('app_info', 'Agent service for StarLight DTN-as-a-Service')
 import importlib
 import pkgutil
 
+# import Diskmanager.py for NVMEoF functions
+sys.path.append("/DTN_Testing_Framework/lib")
+from DiskManager import disk_manager
+
 MAX_FIO_JOBS=400
 nuttcp_port = 30001
+
+ORCHESTRATOR_REGISTRATION_PATH = "/orchestrator_registered"
+orchestrator_registered = False
 
 def import_submodules(package, recursive=True):
     """ Import all submodules of a module, recursively, including subpackages
@@ -47,13 +61,33 @@ loaded_modules = import_submodules('libs', False)
 tools = [x.__name__ for x in TransferTools.__subclasses__()]
 
 def load_config():
-    try: app.config.from_envvar('CONF_FILE')
+    try: 
+        app.config.from_envvar('CONF_FILE')
     except RuntimeError:
-        pass
+        logging.debug("No config file found, using defaults")
     finally:
         if 'FILE_LOC' not in app.config:
             logging.debug('FILE_LOC is not set, using default /data')
             app.config['FILE_LOC'] = '/data'
+        if 'SKIP_TOKEN_AUTH' not in app.config:
+            app.config['SKIP_TOKEN_AUTH'] = False
+        if 'SINGLE_ORCHESTRATOR' not in app.config:
+            app.config["SINGLE_ORCHESTRATOR"] = False
+
+    # also check for a orchestrator_registered file
+    global orchestrator_registered
+    try:
+        if app.config.get("SINGLE_ORCHESTRATOR"):
+            with open(ORCHESTRATOR_REGISTRATION_PATH) as f:
+                orchestrator_registered = f.readline().strip()
+        else:
+            orchestrator_registered = False
+    except:
+        orchestrator_registered = False
+
+    global nuttcp_port
+    if app.config.get("NUTTCP_PORT"):
+        nuttcp_port = app.config["NUTTCP_PORT"]
 
 def get_type(mode):
     if stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
@@ -100,9 +134,96 @@ def commit_write(jobs):
         os.remove(job)
     return ret_code
 
+def get_registration_data(given_addr, default_data_addr=None, default_interface=None):
+    # we need hostname, management IP, dataplane IP, dataplane interface
+    hostname = socket.gethostname()
+    data_addr = app.config.get("DATA_ADDR", default_data_addr)
+    data_int = app.config.get("DATA_INTERFACE", default_interface)
+    all_addrs = psutil.net_if_addrs()
+    if not data_addr and not data_int:
+        # figure out dataplane interface by fastest interface
+        interfaces = psutil.net_if_stats()
+        interfaces = sorted([(interf, interfaces[interf].speed) for interf in interfaces 
+                if interfaces[interf].isup and interf != 'lo'], key=lambda k: k[1])
+        if not interfaces:
+            raise ValueError("No valid interfaces found for dataplane")
+        data_int = interfaces[-1][0] # fastest
+    if not data_int and data_addr:
+        # figure out dataplane interface from given address
+        for name, sniclist in all_addrs.items():
+            if data_addr in [snic.address for snic in sniclist]:
+                data_int = name
+                break
+        if not data_int:
+            raise ValueError("Dataplane address not found")
+    if not data_addr and data_int:
+        # figure out dataplane address from given interface
+        if data_int not in all_addrs:
+            raise ValueError(f"Invalid data interface {data_int}")
+        data_addr = all_addrs.get(data_int)[0].address
+    
+    man_addr = app.config.get("MAN_ADDR")
+    if not man_addr:
+        man_addr = given_addr
+
+    username = pwd.getpwuid(os.getuid()).pw_name
+    # TODO generate auth token and pass it to the orchestrator
+    # Note: this is NOT SECURE if not passed through https
+    return {"name": hostname, "man_addr": man_addr, "data_addr": data_addr,
+            "interface": data_int, "username": username, "jwt_token": generate_token()}
+
+def fix_dm_mounts(diskmanager):
+    # Fix device names so mounts work properly
+    # first, get all NVME block devices
+    block_devices = [blk for blk in os.listdir('/dev') if blk.startswith('nvme')]
+    for idx, device in enumerate(diskmanager.devices):
+        # get nvme drives with tcp transport
+        if device.get('transport') == 'tcp':
+            # find the matching block device and rewrite ['device']
+            for blk in block_devices:
+                if blk.startswith(device.get('raw_dev')) and 'p' in blk:
+                    device['device'] = f"/dev/{blk}"
+                    diskmanager.devices[idx] = device
+                    # only apply the first partition
+                    break
+    return diskmanager
+
+def generate_token():
+    # generate a JWT with the hostname (can't be changed on client) and a secret (can be updated)
+    composite_secret = socket.gethostname() + app.config.get("API_SECRET", "defaultsecretnotsecure")
+    # sha1 hash so (configured) plaintext secret doesn't get sent out
+    return hashlib.sha1(bytes(composite_secret, encoding='ascii')).hexdigest()
+
+def authorize(f):
+    @wraps(f)
+    def check_orchestrator_token(*args, **kwargs):
+        if not request.headers.get('Authorization') and not app.config.get('SKIP_TOKEN_AUTH'):
+            abort(401)
+        user = None
+        try:
+            jwtdata = request.headers['Authorization']
+            jwtdata = str(jwtdata).replace('Bearer ', '')
+            # TODO future releases can pass Jupyter user to the agent for permissions checks
+            decoded = jwt.decode(jwtdata, generate_token(), 'HS256')
+            #user = decoded.get('sub')
+            #start_time = decoded.get('iat')
+        except jwt.exceptions.InvalidSignatureError:
+            logging.warn(f"Invalid JWT token")
+            if not app.config.get('SKIP_TOKEN_AUTH'):
+                abort(401)
+        except Exception as e:
+            logging.error(f"Auth error: {str(e)}")
+            if not app.config.get('SKIP_TOKEN_AUTH'):
+                abort(401)
+
+        #return f(user, *args, **kwargs)
+        return f(*args, **kwargs)
+    return check_orchestrator_token
+
 @app.route('/files/', defaults={'path': ''})
 @app.route('/files/<path:path>')
 @metrics.do_not_track()
+@authorize
 def list_files(path):
     try:
         contents = get_files(os.path.join(app.config['FILE_LOC'], path))
@@ -114,6 +235,7 @@ def list_files(path):
 
 @app.route('/create_file/', methods=['POST'])
 @metrics.counter('daas_agent_file_create', 'Number of files created')
+@authorize
 def create_file():
 
     fio_job_files = glob.glob("agent/scripts/*.fio")
@@ -144,9 +266,27 @@ def create_file():
     ret = commit_write(jobs)
     return jsonify(ret.returncode)
 
+@app.route('/checksum/<path:path>')
+@metrics.do_not_track()
+@authorize
+def generate_checksum(path):
+    try:
+        contents = get_files(os.path.join(app.config['FILE_LOC'], path))
+        filelist = [f['name'] for f in contents if f['type'] == 'file']
+        checksum = ''
+        for chkfile in filelist:
+            chkfile = os.path.join(app.config['FILE_LOC'], path, chkfile)
+            checksum += hashlib.md5(open(chkfile, 'rb').read()).hexdigest()
+        return jsonify({'checksum': checksum, 'num_files': len(filelist)})
+    except PermissionError:
+        abort(403)
+    except FileNotFoundError as e:
+
+        abort(404)
 
 @app.route('/create_dir/', methods=['POST'])
 @metrics.counter('daas_agent_dir_create', 'Number of dir created')
+@authorize
 def create_dir():
     dirs = request.get_json()
 
@@ -158,6 +298,7 @@ def create_dir():
 
 @app.route('/file/<path:path>', methods=['DELETE'])
 @metrics.counter('daas_agent_file_delete', 'Number of files deleted')
+@authorize
 def delete_file(path):
 
     #TODO : check user permission
@@ -192,6 +333,7 @@ def delete_file(path):
 
 @app.route('/trim', methods=['GET'])
 @metrics.counter('daas_agent_trim', 'Number of time NVME trim issued')
+@authorize
 def trim():
     proc = subprocess.run(['fstrim', '-va'])
     return {'returncode' : proc.returncode}
@@ -204,6 +346,7 @@ def check_running():
 
 @app.route('/ping/<string:dst_ip>')
 @metrics.do_not_track()
+#@authorize
 def ping_host(dst_ip):
     logging.debug('pinging {}'.format(dst_ip))
     delay = ping3.ping(dst_ip)
@@ -212,6 +355,7 @@ def ping_host(dst_ip):
 
 @app.route('/tools')
 @metrics.do_not_track()
+@authorize
 def get_transfer_tools():    
     return jsonify(tools)
 
@@ -219,6 +363,7 @@ def get_transfer_tools():
 @metrics.counter('daas_agent_polling', 'Number of polling for transfer',
 labels={'status': lambda r: r.status_code})
 @metrics.gauge('daas_agent_num_transfers', 'Number of transfers waiting to be finished')
+@authorize
 def poll(tool):
     data = request.get_json()
 
@@ -243,6 +388,7 @@ def poll(tool):
 @app.route('/sender/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',
 labels={'status': lambda r: r.status_code})
+@authorize
 def run_sender(tool):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
@@ -254,7 +400,7 @@ def run_sender(tool):
         filename = None       
 
     else:
-        filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))
+        filename = os.path.join(app.config['FILE_LOC'], data.get('file'))
 
         if not os.path.exists(filename): 
             abort(make_response(jsonify(message="file is not found"), 404))    
@@ -279,6 +425,7 @@ def run_sender(tool):
 @app.route('/receiver/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_receiver', 'Number of receiver created',
 labels={'status': lambda r: r.status_code})
+@authorize
 def run_receiver(tool):
     if tool not in tools: abort(404)
 
@@ -316,6 +463,7 @@ def run_receiver(tool):
 @app.route('/cleanup/<string:tool>', methods=['GET'])
 @metrics.counter('daas_agent_cleanup', 'Number of cleanup',
 labels={'status': lambda r: r.status_code})
+@authorize
 def cleanup(tool):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
@@ -333,6 +481,7 @@ def cleanup(tool):
 @app.route('/free_port/<string:tool>/<int:port>', methods=['GET'])
 @metrics.counter('daas_agent_free_port', 'Number of freeing port',
 labels={'status': lambda r: r.status_code})
+@authorize
 def free_port(tool, port):
     if tool not in tools: abort(make_response(jsonify(message="transfer tool {} not found".format(tool)), 404))
 
@@ -347,12 +496,129 @@ def free_port(tool, port):
     except Exception:
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()    
-    parser.add_argument("--flask_port", help="Set Flask port", type=int, default=5000)
-    parser.add_argument("--nuttcp_port", help="Set nuttcp port", type=int, default=30001)
-    args = parser.parse_args()    
-    nuttcp_port = args.nuttcp_port
+@app.route('/nvme/setup', methods=['POST'])
+@authorize
+def nvme_setup():
+    data = request.get_json()
+    ip = data.get('addr')
+    numa = int(data.get('numa', 1))
+    transport = data.get('transport', 'tcp')
+    null_blk = data.get('null_blk', 0)
+    inline_data_size = data.get('inline_data_size', 16384)
+    dm = disk_manager(nvmeof_numa=numa)
+    # check for an existing port first
+    # TODO port ID hardcoded
+    try:
+        nvmet.Port(mode='lookup', portid=1)
+    except nvmet.nvme.CFSNotFound:        
+        dm.create_nvmeof(numa, ip, transport=transport, 
+            num_null_blk=null_blk, inline_data_size=inline_data_size)
 
-    load_config()    
-    app.run('0.0.0.0', port=args.flask_port)
+    devices =  [x for x in dm.devices if x['numa'] == numa or numa < 0]
+    return {"devices": devices}
+
+@app.route('/nvme/setup', methods=['DELETE'])
+@authorize
+def nvme_stop():
+    # TODO move this functionality into the DiskManager library
+    # remove subsystem and port
+    try:
+        existing_port = nvmet.Port(mode='lookup', portid=1)
+        existing_port.delete()
+        return {"result": "stopped"}
+    except nvmet.nvme.CFSNotFound:
+        return {"result": "not set up"}
+    except PermissionError as e:
+        return {"result": str(e)}, 403
+
+@app.route('/nvme/devices')
+@authorize
+def nvme_devices():
+    dm = disk_manager(nvmeof_numa=None)
+    dm.scan_nvme()
+    dm = fix_dm_mounts(dm) # quick patch device name for mounting
+    # also get mounted partitions
+    partitions = psutil.disk_partitions()
+    mountpoints = []
+    for idx, device in enumerate(dm.devices):
+        for partition in partitions:
+            if partition.device.startswith(device.get('device')):
+                mountpoints.append({"device": device.get('device'), "partition": partition.mountpoint})
+                dm.devices[idx]['mounted'] = partition.mountpoint
+    return {"devices": dm.devices, "mountpoints": mountpoints}
+
+@app.route('/nvme/connect', methods=['POST'])
+@authorize
+def nvme_connect():
+    data = request.get_json()
+    remote = data.get('remote_addr')
+    transport = data.get('transport', 'tcp')
+    mountpoint = data.get('mountpoint')
+    username = data.get('username')
+    numa = data.get('numa', 0)
+    fs = data.get('fs', 'xfs')
+
+    dm = disk_manager(nvmeof_numa=None, mountpoint=mountpoint)
+    nqns = dm.discover_nvmeof(remote, 4420)
+    dm.connect_nvmeof(remote, nqns, transport=transport)
+    if mountpoint:
+        # FIXME problem with mounting, device in /sys/class/nvme is different from /dev
+        #    Exception: mount: /data/nvme/disk1: special device /dev/nvme1c1n1 does not exist
+
+        # get nvme drive with tcp transport
+        remote_id, remote_device = [(idx, dev) for idx, dev in enumerate(dm.devices) if dev.get('transport') == 'tcp'][0]
+        # find the first partition - hacky but it works
+        remote_partitions = [partition for partition in os.listdir('/dev')
+                if remote_device.get('raw_dev') in partition and 'p' in partition]
+        if remote_partitions:
+            # in case the remote drive is not formatted
+            remote_device['device'] = f"/dev/{remote_partitions[0]}"
+            try:
+                dm.mount(remote_device, remote_id)
+            except Exception as e:
+                return {"devices": dm.devices, "nqn": nqns, "mount_error": str(e)}, 400
+
+    return {"devices": dm.devices, "nqn": nqns, "mountpoint": mountpoint}
+
+@app.route('/nvme/connect', methods=['DELETE'])
+@authorize
+def nvme_disconnect():
+    data = request.get_json()
+    dm = disk_manager()
+    # find the remote drive and unmount it
+    dm.scan_nvme()
+    dm = fix_dm_mounts(dm) # quick patch device name for mounting
+    remote_drives = [device for device in dm.devices if device.get('transport') == 'tcp']
+    if remote_drives:
+        dm.umount(remote_drives[0].get('device'))
+        dm.disconnect_nvmeof() # TODO determine nqn if not default
+        return "disconnected"
+
+# can't use the authorize decorator here
+@app.route('/register', methods=['POST'])
+def register_agent():
+    global orchestrator_registered
+    if app.config.get("SINGLE_ORCHESTRATOR") and orchestrator_registered:
+        # we are already registered with an orchestrator, fail immediately
+        abort(make_response(jsonify(message="Already registered with an orchestrator"), 400))
+
+    # get address used to contact this DTN and use it as the management address
+    data = request.get_json()
+    addr = data.get("address")
+    override_data_addr = data.get("data_addr")
+    override_interface = data.get("interface")
+    registration_data = get_registration_data(addr, override_data_addr, override_interface)
+
+    # Set the registered orchestrator and save it
+    orchestrator_registered = request.remote_addr
+    if app.config.get("SINGLE_ORCHESTRATOR"):
+        with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
+            f.write(orchestrator_registered)
+
+    # careful - get_registration_data returns a token that is used to authorize all other
+    # API calls.
+    return jsonify(registration_data)
+
+if __name__ == '__main__':
+    load_config()
+    app.run('0.0.0.0', port=app.config.get("AGENT_PORT", 5000))
