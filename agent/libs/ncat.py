@@ -3,132 +3,85 @@ import subprocess
 import logging
 import sys, os, time
 
-class nuttcp(TransferTools):
+class ncat(TransferTools):
     running_svr_threads = {}
     running_cli_threads = {}
-    # cports = list(range(nuttcp_port, nuttcp_port+ 999))
-    # dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
     cports = []
-    dports = []    
     
     def __init__(self, numa_scheme = 1, nuttcp_port=30001) -> None:        
         super().__init__(numa_scheme = numa_scheme)
-        if nuttcp.cports == []:
+        if ncat.cports == []:
             self.reset_ports(nuttcp_port=nuttcp_port)
 
     def reset_ports(self, nuttcp_port):
-        nuttcp.cports = list(range(nuttcp_port, nuttcp_port+ 999))
-        nuttcp.dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
+        ncat.cports = list(range(nuttcp_port, nuttcp_port+ 999))
 
     def run_sender(self, srcfile, **optional_args):
-        cport = nuttcp.cports.pop()
-        dport = nuttcp.dports.pop()
-        logging.debug('running nuttcp server on cport {} file {} dport {}'.format(cport, srcfile, dport))
+        cport = ncat.cports.pop()
+        logging.debug('running ncat server on cport {} file {}'.format(cport, srcfile))
         logging.debug('args {}'.format(optional_args))
         
         if srcfile is None:            
-            
-            if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
-                blocksize = optional_args['blocksize']
-            else:
-                blocksize = 8192
+            duration = optional_args['duration']
 
-            cmd = ['nuttcp', '-S', '-1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', '--nofork']
+            cmd = ['timeout', f'{duration}', 'ncat', '-l', '--send-only', f'{cport}']
             logging.debug(str(cmd))
             proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
-            nuttcp.running_svr_threads[cport] = [proc, dport, srcfile]
+            ncat.running_svr_threads[cport] = [proc, srcfile]
             if 'numa_node' in optional_args:
                 super().bind_proc_to_numa(proc, optional_args['numa_node'])
-            return {'cport' : cport, 'dport': dport, 'result': True}
+            return {'cport' : cport, 'result': True}
 
         else:
-            filemode = '-sdz'
-            if 'direct' in optional_args and optional_args['direct'] == False:
-                filemode = filemode.replace('d', '')
-
-            if 'zerocopy' in optional_args and optional_args['zerocopy'] == False:
-                filemode = filemode.replace('z', '')
-            
-            if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
-                blocksize = optional_args['blocksize']
-            else:
-                blocksize = 8192
-
-            cmd = ['nuttcp', '-S', '-b', '-1', f'-P{cport}', f'-p{dport}', filemode, f'-l{blocksize}k', '--nofork']
+            cmd = ['ncat', '-l', '--send-only', f'{cport}']
             logging.debug(str(cmd))
             with open(srcfile, 'rb') as file:
                 proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
-                nuttcp.running_svr_threads[cport] = [proc, dport, srcfile]
+                ncat.running_svr_threads[cport] = [proc, srcfile]
                 if 'numa_node' in optional_args:
                     super().bind_proc_to_numa(proc, optional_args['numa_node'])
-            return {'cport' : cport, 'dport': dport, 'size' : os.path.getsize(srcfile), 'result': True}
+            return {'cport' : cport, 'size' : os.path.getsize(srcfile), 'result': True}
 
     def run_receiver(self, address, dstfile, **optional_args):
-        
         if 'cport' not in optional_args:
             logging.error('cport number not found')
             raise Exception('Control port not found')
-        if 'dport' not in optional_args:
-            logging.error('dport number not found')
-            raise Exception('Data port not found')
         
         #logging.debug('running nuttcp receiver on address {} file {} cport {} dport {}'.format(address, dstfile, optional_args['cport'], optional_args['dport']))        
 
         if dstfile is None:
-            
-            if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
-                blocksize = optional_args['blocksize']
-            else:
-                blocksize = 8192
-
-            duration = optional_args['duration']
             cport = optional_args['cport']
-            dport = optional_args['dport']
-            logging.debug('running nuttcp mem-to-mem client on cport {} dport {}'.format(cport, dport))
+            logging.debug('running ncat mem-to-mem client on cport {}'.format(cport))
             logging.debug('args {}'.format(optional_args))
-            cmd = ['nuttcp', '-r', '-i1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', f'-T{duration}', '--nofork', address]
+            cmd = ['nc', '--recv-only', address, f'{cport}']
             logging.debug(str(cmd))
             proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
             if 'numa_node' in optional_args:
                 super().bind_proc_to_numa(proc, optional_args['numa_node'])
-            nuttcp.running_cli_threads[cport] = [proc, dport]
-            return {'cport' : cport, 'dport': dport, 'result': True}
+            ncat.running_cli_threads[cport] = [proc]
+            return {'cport' : cport, 'result': True}
 
         else:
-            filemode = '-sdz'
-            if 'direct' in optional_args and optional_args['direct'] == False:
-                filemode = filemode.replace('d', '')
-
-            if 'zerocopy' in optional_args and optional_args['zerocopy'] == False:
-                filemode = filemode.replace('z', '')
-
-            if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
-                blocksize = optional_args['blocksize']
-            else:
-                blocksize = 8192
-
             cport = optional_args['cport']
-            dport = optional_args['dport']
-            logging.debug('running nuttcp client on cport {} file {} dport {}'.format(cport, dstfile, dport))
+            logging.debug('running ncat client on cport {} file {}'.format(cport, dstfile))
             logging.debug('args {}'.format(optional_args))
-            cmd = ['nuttcp', '-r', '-b', '-i1', f'-P{cport}', f'-p{dport}', filemode, f'-l{blocksize}k', '--nofork', address]
+            cmd = ['ncat', '--recv-only', address, f'{cport}']
             logging.debug(str(cmd))
             with open(dstfile, 'wb') as file:
                 proc = subprocess.Popen(cmd, stdout=file, stderr=sys.stderr)
                 if 'numa_node' in optional_args:
                     super().bind_proc_to_numa(proc, optional_args['numa_node'])
-                nuttcp.running_cli_threads[cport] = [proc, dport]
-            return {'cport' : cport, 'dport': dport, 'result': True}
+                ncat.running_cli_threads[cport] = [proc]
+            return {'cport' : cport, 'result': True}
 
     @classmethod
     def free_port(cls, port, **optional_args):
-        threads = nuttcp.running_svr_threads
+        threads = ncat.running_svr_threads
         err_thread = threads.pop(port)
         err_thread[0].kill()
         err_thread[0].kill()
         err_thread[0].communicate()
-        nuttcp.cports.append(port)
-        nuttcp.dports.append(err_thread[1])
+        ncat.cports.append(port)
 
     @classmethod
     def poll_progress(cls, **optional_args):
@@ -147,25 +100,24 @@ class nuttcp(TransferTools):
         cport = optional_args.pop('cport')        
         
         if optional_args['node'] == 'sender':
-            threads = nuttcp.running_svr_threads
+            threads = ncat.running_svr_threads
             # logging.debug('threads: ' + str(threads))            
             proc = threads[cport][0]
             try:
                 proc.communicate(timeout=timeout)
                 completed_thread = threads.pop(cport)
-                nuttcp.cports.append(cport)
-                nuttcp.dports.append(completed_thread[1])
+                ncat.cports.append(cport)
                 return proc.returncode
             except subprocess.TimeoutExpired:
-                filepath = threads[cport][2]
-                nuttcp.free_port(cport)
+                filepath = threads[cport][1]
+                ncat.free_port(cport)
                 logging.error('sender timed out on port %s' % cport)
                 raise TransferTimeout('sender timed out on port %s' % cport, filepath)
         elif optional_args['node'] == 'receiver':
-            threads = nuttcp.running_cli_threads
+            threads = ncat.running_cli_threads
             # logging.debug('threads: ' + str(threads))
             try:                
-                proc = nuttcp.running_cli_threads[cport][0]
+                proc = ncat.running_cli_threads[cport][0]
                 proc.communicate(timeout=timeout)
                 threads.pop(cport)
                 if optional_args['dstfile'] == None:
@@ -186,20 +138,17 @@ class nuttcp(TransferTools):
 
     @classmethod
     def cleanup(cls, **optional_args):
-        for i,j in nuttcp.running_svr_threads.items():
+        for i,j in ncat.running_svr_threads.items():
             j[0].kill()
             j[0].kill()
             j[0].communicate()
         
-        nuttcp.running_svr_threads = {}
+        ncat.running_svr_threads = {}
 
-        for i,j in nuttcp.running_cli_threads.items():
+        for i,j in ncat.running_cli_threads.items():
             j[0].kill()
             j[0].kill()
             j[0].communicate()
 
-        nuttcp.running_cli_threads = {}
+        ncat.running_cli_threads = {}
         cls.reset_ports(cls, nuttcp_port = optional_args['nuttcp_port'])
-
-        # nuttcp.cports = list(range(nuttcp_port, nuttcp_port+ 999))
-        # nuttcp.dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
