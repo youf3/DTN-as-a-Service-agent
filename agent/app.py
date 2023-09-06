@@ -616,7 +616,7 @@ def register_agent():
 
     # Set the registered orchestrator and save it
     with orchestrator_address.get_lock():
-        orchestrator_address.value = request.remote_addr
+        orchestrator_address.value = request.remote_addr.encode()
         if app.config.get("SINGLE_ORCHESTRATOR"):
             with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
                 f.write(request.remote_addr)
