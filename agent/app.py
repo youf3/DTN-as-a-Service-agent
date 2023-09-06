@@ -8,6 +8,8 @@ import traceback
 import ping3
 import json
 from pathlib import Path
+from multiprocessing import Value, Array
+from ctypes import c_bool
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
 from libs.NVME import Port, CFSNotFound
@@ -36,7 +38,6 @@ MAX_FIO_JOBS=400
 nuttcp_port = 30001
 
 ORCHESTRATOR_REGISTRATION_PATH = "/orchestrator_registered"
-orchestrator_registered = False
 
 def import_submodules(package, recursive=True):
     """ Import all submodules of a module, recursively, including subpackages
@@ -73,16 +74,21 @@ def load_config():
             app.config["SINGLE_ORCHESTRATOR"] = False
 
     # also check for a orchestrator_registered file
-    global orchestrator_registered
+    global is_orchestrator_registered
+    global orchestrator_address
     try:
         if app.config.get("SINGLE_ORCHESTRATOR"):
             with open(ORCHESTRATOR_REGISTRATION_PATH) as f:
-                orchestrator_registered = f.readline().strip()
+                is_orchestrator_registered = Value(c_bool, True)
+                orchestrator_address = Array('c', f.readline().strip().encode())
         else:
-            orchestrator_registered = False
+            is_orchestrator_registered = Value(c_bool, False)
+            orchestrator_address = Array('c', b'')
     except:
-        orchestrator_registered = False
+        is_orchestrator_registered = Value(c_bool, False)
+        orchestrator_address = Array('c', b'')
 
+    # no need for multiprocessing, this is only set on startup
     global nuttcp_port
     if app.config.get("NUTTCP_PORT"):
         nuttcp_port = app.config["NUTTCP_PORT"]
@@ -595,8 +601,9 @@ def nvme_disconnect():
 # can't use the authorize decorator here
 @app.route('/register', methods=['POST'])
 def register_agent():
-    global orchestrator_registered
-    if app.config.get("SINGLE_ORCHESTRATOR") and orchestrator_registered:
+    global is_orchestrator_registered
+    global orchestrator_address
+    if app.config.get("SINGLE_ORCHESTRATOR") and is_orchestrator_registered:
         # we are already registered with an orchestrator, fail immediately
         abort(make_response(jsonify(message="Already registered with an orchestrator"), 400))
 
@@ -608,15 +615,20 @@ def register_agent():
     registration_data = get_registration_data(addr, override_data_addr, override_interface)
 
     # Set the registered orchestrator and save it
-    orchestrator_registered = request.remote_addr
-    if app.config.get("SINGLE_ORCHESTRATOR"):
-        with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
-            f.write(orchestrator_registered)
+    with orchestrator_address.get_lock():
+        orchestrator_address.value = request.remote_addr
+        if app.config.get("SINGLE_ORCHESTRATOR"):
+            with open(ORCHESTRATOR_REGISTRATION_PATH, 'w') as f:
+                f.write(request.remote_addr)
+
+    with is_orchestrator_registered.get_lock():
+        is_orchestrator_registered.value = True
 
     # careful - get_registration_data returns a token that is used to authorize all other
     # API calls.
     return jsonify(registration_data)
 
-if __name__ == '__main__':
-    load_config()
+load_config()
+
+if __name__ == '__main__':    
     app.run('0.0.0.0', port=app.config.get("AGENT_PORT", 5000))

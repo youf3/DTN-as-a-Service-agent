@@ -8,5 +8,5 @@ COPY agent /agent
 RUN pip3 install -r requirements.txt
 
 EXPOSE 5000
-ENTRYPOINT [ "python3"]
-CMD ["app.py"]
+
+ENTRYPOINT ["gunicorn", "--bind", "0.0.0.0:5000", "--log-level", "info", "app:app"]
