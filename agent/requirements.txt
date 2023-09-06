@@ -1,7 +1,8 @@
 flask
 flask-testing
-prometheus_flask_exporter
+mdstat
 numa
 ping3
+prometheus_flask_exporter
 psutil
 pyjwt

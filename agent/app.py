@@ -10,12 +10,14 @@ import json
 from pathlib import Path
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
+from libs.NVME import Port, CFSNotFound
+# import Diskmanager.py for NVMEoF functions
+from libs.DiskManager import disk_manager
 import argparse
 import hashlib
 import socket
 import psutil
 import pwd
-import nvmet
 from functools import wraps
 import jwt
 
@@ -29,10 +31,6 @@ metrics.info('app_info', 'Agent service for StarLight DTN-as-a-Service')
 
 import importlib
 import pkgutil
-
-# import Diskmanager.py for NVMEoF functions
-sys.path.append("/DTN_Testing_Framework/lib")
-from DiskManager import disk_manager
 
 MAX_FIO_JOBS=400
 nuttcp_port = 30001
@@ -509,8 +507,8 @@ def nvme_setup():
     # check for an existing port first
     # TODO port ID hardcoded
     try:
-        nvmet.Port(mode='lookup', portid=1)
-    except nvmet.nvme.CFSNotFound:        
+        Port(mode='lookup', portid=1)
+    except CFSNotFound:        
         dm.create_nvmeof(numa, ip, transport=transport, 
             num_null_blk=null_blk, inline_data_size=inline_data_size)
 
@@ -523,10 +521,10 @@ def nvme_stop():
     # TODO move this functionality into the DiskManager library
     # remove subsystem and port
     try:
-        existing_port = nvmet.Port(mode='lookup', portid=1)
+        existing_port = Port(mode='lookup', portid=1)
         existing_port.delete()
         return {"result": "stopped"}
-    except nvmet.nvme.CFSNotFound:
+    except CFSNotFound:
         return {"result": "not set up"}
     except PermissionError as e:
         return {"result": str(e)}, 403
