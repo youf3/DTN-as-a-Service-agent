@@ -8,7 +8,7 @@ import traceback
 import ping3
 import json
 from pathlib import Path
-from multiprocessing import Value, Array
+from multiprocessing import Value, Array, Manager
 from ctypes import c_bool
 from libs.TransferTools import TransferTools, TransferTimeout
 from libs.Schemes import NumaScheme
@@ -22,8 +22,13 @@ import psutil
 import pwd
 from functools import wraps
 import jwt
+import time
 
-#logging.getLogger().setLevel(logging.DEBUG)
+# logging.basicConfig(
+#     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
+#     level=logging.DEBUG,
+#     datefmt='%Y-%m-%d %H:%M:%S')
+
 from flask import Flask, abort, jsonify, request, make_response
 app = Flask(__name__)
 
@@ -102,9 +107,20 @@ def get_type(mode):
 
 def get_files(dirname):
     contents = []
-    total = {'size': 0, 'dir': 0, 'file': 0}
+    #total = {'size': 0, 'dir': 0, 'file': 0}
 
-    for filename in list(Path(dirname).glob('**/*')):
+    # # os.walk() is 10x faster than Path.glob
+    # for tree in os.walk(dirname):
+    #     # tree is (filepath, dirs, files)
+    #     # add files
+    #     for filename in tree[2]:
+    #         filepath = os.path.join(tree[0], filename)
+    #         ...
+
+    if not os.path.exists(dirname):
+        raise FileNotFoundError
+
+    for filename in list(Path(dirname).glob("**/*")):
         filepath = os.path.join(dirname, filename)
         stat_res = os.stat(filepath)
         info = {}
@@ -112,11 +128,20 @@ def get_files(dirname):
         info['mtime'] = stat_res.st_mtime
         ft = get_type(stat_res.st_mode)
         info['type'] = ft
-        total[ft] += 1
+        #total[ft] += 1
         sz = stat_res.st_size
         info['size'] = sz
-        total['size'] += sz
+        #total['size'] += sz
         contents.append(info)
+
+    if not contents and os.path.isfile(dirname):
+        stat_res = os.stat(dirname)
+        return [{
+            'name': os.path.basename(dirname),
+            'mtime': stat_res.st_mtime,
+            'type': 'file',
+            'size': stat_res.st_size
+        }]
 
     return contents
 
@@ -277,15 +302,14 @@ def generate_checksum(path):
     try:
         contents = get_files(os.path.join(app.config['FILE_LOC'], path))
         filelist = [f['name'] for f in contents if f['type'] == 'file']
-        checksum = ''
+        checksums = {}
         for chkfile in filelist:
-            chkfile = os.path.join(app.config['FILE_LOC'], path, chkfile)
-            checksum += hashlib.md5(open(chkfile, 'rb').read()).hexdigest()
-        return jsonify({'checksum': checksum, 'num_files': len(filelist)})
+            filepath = os.path.join(app.config['FILE_LOC'], path, chkfile)
+            checksums[chkfile] = hashlib.md5(open(filepath, 'rb').read()).hexdigest()
+        return jsonify({'checksums': checksums, 'num_files': len(filelist)})
     except PermissionError:
         abort(403)
     except FileNotFoundError as e:
-
         abort(404)
 
 @app.route('/create_dir/', methods=['POST'])
@@ -373,11 +397,7 @@ def poll(tool):
 
     if 'dstfile' in data and data['dstfile'] != None:
         data['dstfile'] = os.path.join(app.config['FILE_LOC'], data['dstfile'])
-    
-    if 'node' in data:
-        logging.debug('polling {} {}'.format(data['node'], tool))
-    else:
-        logging.debug('polling {}'.format(tool))
+
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)    
     try:        
@@ -402,12 +422,12 @@ def run_sender(tool):
 
     if data['file'] == None:
         filename = None       
-
     else:
         filename = os.path.join(app.config['FILE_LOC'], data.get('file'))
-
         if not os.path.exists(filename): 
             abort(make_response(jsonify(message="file is not found"), 404))    
+
+    logging.debug(f"Sender request received {filename}")
 
     # find the module for a tool and instantiate it
     target_module = [x for x in loaded_modules if 'libs.' + tool == x]

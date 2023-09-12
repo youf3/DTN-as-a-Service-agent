@@ -9,4 +9,7 @@ RUN pip3 install -r requirements.txt
 
 EXPOSE 5000
 
-ENTRYPOINT ["gunicorn", "--bind", "0.0.0.0:5000", "--log-level", "info", "app:app"]
+ENTRYPOINT ["gunicorn", "--bind", "0.0.0.0:5000", \
+    "--log-level", "info", "--access-logfile", "-", "--access-logformat", \
+    "'%(h)s %(t)s \"%(r)s\" %(s)s %(b)s %(M)s'", \
+    "app:app"]
