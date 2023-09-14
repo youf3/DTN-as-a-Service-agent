@@ -1,7 +1,7 @@
 from libs.TransferTools import TransferTools, TransferTimeout
 import subprocess
 import logging
-import sys, os, time
+import sys, os, time, re
 from threading import Lock
 
 class nuttcp(TransferTools):
@@ -89,9 +89,10 @@ class nuttcp(TransferTools):
             cport = optional_args['cport']
             dport = optional_args['dport']
             logging.debug('running nuttcp mem-to-mem client on cport {} dport {}'.format(cport, dport))
-            cmd = ['nuttcp', '-r', '-i1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', f'-T{duration}', '--nofork', address]
+            cmd = ['nuttcp', '-r', '-i1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', f'-T{duration}', '-fparse', '--nofork', address]
             logging.debug(str(cmd))
-            proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+            # PIPE stdout so we can keep the output for size calculations later
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
             if 'numa_node' in optional_args:
                 super().bind_proc_to_numa(proc, optional_args['numa_node'])
             nuttcp.running_cli_threads[cport] = [proc, dport, time_start]
@@ -169,10 +170,20 @@ class nuttcp(TransferTools):
             # logging.debug('threads: ' + str(threads))
             try:                
                 proc = nuttcp.running_cli_threads[cport][0]
-                proc.communicate(timeout=timeout)
+                out, err = proc.communicate(timeout=timeout)
                 completed_thread = threads.pop(cport)
                 if optional_args['dstfile'] == None:
-                    return proc.returncode, None
+                    # attempt to parse number of megabytes sent during the mem-mem test
+                    if not out or b'megabytes' not in out:
+                        if err:
+                            logging.error(f"receiver failed on port {cport}: {err.decode()}")
+                        return proc.returncode, None
+                    transfer_stats = dict(re.findall(r'(\w+)=(\S+)', out.decode().splitlines()[-1]))
+                    # make sure "megabytes" is a number
+                    if not transfer_stats.get('megabytes', '').replace(".", "").isnumeric():
+                        return proc.returncode, None
+                    # return with bytes transferred
+                    return proc.returncode, (int(float(transfer_stats.get('megabytes', '0.0'))) * 1024 * 1024)
                 else:    
                     return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
             except subprocess.TimeoutExpired:

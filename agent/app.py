@@ -1,33 +1,27 @@
-from ast import parse
 import os, glob, shutil
 import stat
 import logging
-import sys
 import subprocess
 import traceback
 import ping3
-import json
 from pathlib import Path
 from multiprocessing import Value, Array, Manager
 from ctypes import c_bool
 from libs.TransferTools import TransferTools, TransferTimeout
-from libs.Schemes import NumaScheme
 from libs.NVME import Port, CFSNotFound
 # import Diskmanager.py for NVMEoF functions
 from libs.DiskManager import disk_manager
-import argparse
 import hashlib
 import socket
 import psutil
 import pwd
 from functools import wraps
 import jwt
-import time
 
-# logging.basicConfig(
-#     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
-#     level=logging.DEBUG,
-#     datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(
+    format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
+    level=logging.getLevelName(os.environ.get('LOG_LEVEL', 'info').upper()),
+    datefmt='%Y-%m-%d %H:%M:%S')
 
 from flask import Flask, abort, jsonify, request, make_response
 app = Flask(__name__)
@@ -521,6 +515,7 @@ def free_port(tool, port):
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 @app.route('/nvme/setup', methods=['POST'])
+@metrics.do_not_track()
 @authorize
 def nvme_setup():
     data = request.get_json()
@@ -542,6 +537,7 @@ def nvme_setup():
     return {"devices": devices}
 
 @app.route('/nvme/setup', methods=['DELETE'])
+@metrics.do_not_track()
 @authorize
 def nvme_stop():
     # TODO move this functionality into the DiskManager library
@@ -556,6 +552,7 @@ def nvme_stop():
         return {"result": str(e)}, 403
 
 @app.route('/nvme/devices')
+@metrics.do_not_track()
 @authorize
 def nvme_devices():
     dm = disk_manager(nvmeof_numa=None)
@@ -572,6 +569,7 @@ def nvme_devices():
     return {"devices": dm.devices, "mountpoints": mountpoints}
 
 @app.route('/nvme/connect', methods=['POST'])
+@metrics.do_not_track()
 @authorize
 def nvme_connect():
     data = request.get_json()
@@ -605,6 +603,7 @@ def nvme_connect():
     return {"devices": dm.devices, "nqn": nqns, "mountpoint": mountpoint}
 
 @app.route('/nvme/connect', methods=['DELETE'])
+@metrics.do_not_track()
 @authorize
 def nvme_disconnect():
     data = request.get_json()
@@ -620,6 +619,7 @@ def nvme_disconnect():
 
 # can't use the authorize decorator here
 @app.route('/register', methods=['POST'])
+@metrics.do_not_track()
 def register_agent():
     global is_orchestrator_registered
     global orchestrator_address
@@ -650,5 +650,5 @@ def register_agent():
 
 load_config()
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
     app.run('0.0.0.0', port=app.config.get("AGENT_PORT", 5000))
