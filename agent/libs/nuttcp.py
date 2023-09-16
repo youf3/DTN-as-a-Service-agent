@@ -58,13 +58,27 @@ class nuttcp(TransferTools):
             else:
                 blocksize = 8192
 
+            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+                compression = optional_args['compression'].lower()
+            else:
+                compression = None
+
             cmd = ['nuttcp', '-S', '-b', '-1', f'-P{cport}', f'-p{dport}', filemode, f'-l{blocksize}k', '--nofork']
-            logging.debug(str(cmd))
-            with open(srcfile, 'rb') as file:
-                proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
-                nuttcp.running_svr_threads[cport] = [proc, dport, srcfile, time_start]
-                if 'numa_node' in optional_args:
-                    super().bind_proc_to_numa(proc, optional_args['numa_node'])
+
+            if compression:
+                # must use shell mode with subprocess
+                cmd = [f'({compression} |'] + cmd + [f') < {srcfile}']
+                logging.debug(str(cmd))
+                proc = subprocess.Popen(' '.join(cmd), stderr=sys.stderr, shell=True)
+            else:
+                # no shell mode, take advantage of performance improvements
+                logging.debug(str(cmd))
+                with open(srcfile, 'rb') as file:
+                    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
+
+            nuttcp.running_svr_threads[cport] = [proc, dport, srcfile, time_start]
+            if 'numa_node' in optional_args:
+                super().bind_proc_to_numa(proc, optional_args['numa_node'])
             return {'cport' : cport, 'dport': dport, 'size' : os.path.getsize(srcfile), 'result': True}
 
     def run_receiver(self, address, dstfile, **optional_args):
@@ -111,15 +125,27 @@ class nuttcp(TransferTools):
             else:
                 blocksize = 8192
 
+            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+                compression = optional_args['compression'].lower()
+            else:
+                compression = None
+
             cport = optional_args['cport']
             dport = optional_args['dport']
             cmd = ['nuttcp', '-r', '-b', '-i1', f'-P{cport}', f'-p{dport}', filemode, f'-l{blocksize}k', '--nofork', address]
-            logging.debug(str(cmd))
-            with open(dstfile, 'wb') as file:
-                proc = subprocess.Popen(cmd, stdout=file, stderr=sys.stderr)
-                if 'numa_node' in optional_args:
-                    super().bind_proc_to_numa(proc, optional_args['numa_node'])
-                nuttcp.running_cli_threads[cport] = [proc, dport, time_start]
+
+            if compression:
+                cmd.extend([f' | {compression} -d > {dstfile}'])
+                logging.debug(str(cmd))
+                proc = subprocess.Popen(' '.join(cmd), shell=True, stderr=sys.stderr)
+            else:
+                logging.debug(str(cmd))
+                with open(dstfile, 'wb') as file:
+                    proc = subprocess.Popen(cmd, stdout=file, stderr=sys.stderr)
+
+            if 'numa_node' in optional_args:
+                super().bind_proc_to_numa(proc, optional_args['numa_node'])
+            nuttcp.running_cli_threads[cport] = [proc, dport, time_start]
             return {'cport' : cport, 'dport': dport, 'result': True}
 
     @classmethod
