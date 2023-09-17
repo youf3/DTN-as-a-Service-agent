@@ -34,7 +34,8 @@ import importlib
 import pkgutil
 
 MAX_FIO_JOBS=400
-nuttcp_port = 30001
+begin_port = 30001
+max_ports = 999
 
 ORCHESTRATOR_REGISTRATION_PATH = "/orchestrator_registered"
 
@@ -88,9 +89,12 @@ def load_config():
         orchestrator_address = Array('c', b'')
 
     # no need for multiprocessing, this is only set on startup
-    global nuttcp_port
+    global begin_port
     if app.config.get("NUTTCP_PORT"):
-        nuttcp_port = app.config["NUTTCP_PORT"]
+        begin_port = app.config["NUTTCP_PORT"]
+    global max_ports
+    if app.config.get("NUTTCP_MAX_PORTS"):
+        max_ports = app.config["NUTTCP_MAX_PORTS"]
 
 def get_type(mode):
     if stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
@@ -430,9 +434,9 @@ def run_sender(tool):
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
     
     if 'numa_scheme' in data:
-        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'], nuttcp_port = nuttcp_port)
+        tool_obj = target_tool_cls(numa_scheme=data['numa_scheme'], begin_port=begin_port, max_ports=max_ports)
     else:
-        tool_obj = target_tool_cls(nuttcp_port = nuttcp_port)
+        tool_obj = target_tool_cls(begin_port=begin_port, max_ports=max_ports)
 
     ret = tool_obj.run_sender(filename, **data)
     if not ret['result']:
@@ -467,9 +471,9 @@ def run_receiver(tool):
     tool_obj = target_tool_cls()
 
     if 'numa_scheme' in data:
-        tool_obj = target_tool_cls(numa_scheme = data['numa_scheme'], nuttcp_port = nuttcp_port)
+        tool_obj = target_tool_cls(numa_scheme=data['numa_scheme'], begin_port=begin_port, max_ports=max_ports)
     else:
-        tool_obj = target_tool_cls(nuttcp_port = nuttcp_port)
+        tool_obj = target_tool_cls(begin_port=begin_port, max_ports=max_ports)
 
     try:
         ret = tool_obj.run_receiver(address, filename, **data)
@@ -490,8 +494,8 @@ def cleanup(tool):
         abort(make_response(jsonify(message="Duplicated transfer tool name" + tool), 400))
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
 
-    try:        
-        retcode = target_tool_cls.cleanup(nuttcp_port=nuttcp_port)
+    try:
+        retcode = target_tool_cls.cleanup(begin_port=begin_port, max_ports=max_ports)
         return jsonify(retcode)
     except Exception:
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
@@ -508,7 +512,7 @@ def free_port(tool, port):
         abort(make_response(jsonify(message="Duplicated transfer tool name" + tool), 400))
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)
 
-    try:        
+    try:
         retcode = target_tool_cls.free_port(port)
         return jsonify(retcode)
     except Exception:

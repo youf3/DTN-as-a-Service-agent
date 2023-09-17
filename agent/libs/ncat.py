@@ -8,13 +8,13 @@ class ncat(TransferTools):
     running_cli_threads = {}
     cports = []
     
-    def __init__(self, numa_scheme = 1, nuttcp_port=30001) -> None:        
+    def __init__(self, numa_scheme=1, begin_port=30001, max_ports=999) -> None:
         super().__init__(numa_scheme = numa_scheme)
         if ncat.cports == []:
-            self.reset_ports(nuttcp_port=nuttcp_port)
+            self.reset_ports(begin_port, max_ports)
 
-    def reset_ports(self, nuttcp_port):
-        ncat.cports = list(range(nuttcp_port, nuttcp_port+ 999))
+    def reset_ports(self, begin_port, max_ports):
+        ncat.cports = list(range(begin_port, begin_port + max_ports))
 
     def run_sender(self, srcfile, **optional_args):
         cport = ncat.cports.pop()
@@ -151,4 +151,4 @@ class ncat(TransferTools):
             j[0].communicate()
 
         ncat.running_cli_threads = {}
-        cls.reset_ports(cls, nuttcp_port = optional_args['nuttcp_port'])
+        cls.reset_ports(cls, optional_args.get('begin_port', ncat.cports[0]), optional_args.get('max_ports', 999))

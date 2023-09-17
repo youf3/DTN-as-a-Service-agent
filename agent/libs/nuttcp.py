@@ -7,25 +7,26 @@ from threading import Lock
 class nuttcp(TransferTools):
     running_svr_threads = {}
     running_cli_threads = {}
+    receiver_retries = {}
     # cports = list(range(nuttcp_port, nuttcp_port+ 999))
     # dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
     cports = []
     dports = []    
     port_lock = Lock()
     
-    def __init__(self, numa_scheme = 1, nuttcp_port=30001) -> None:        
+    def __init__(self, numa_scheme = 1, begin_port=30001, max_ports=999) -> None:
         super().__init__(numa_scheme = numa_scheme)
         if nuttcp.cports == []:
-            self.reset_ports(nuttcp_port=nuttcp_port)
+            self.reset_ports(begin_port, max_ports)
 
-    def reset_ports(self, nuttcp_port):
-        with self.port_lock:
-            nuttcp.cports = list(range(nuttcp_port, nuttcp_port+ 999))
-            nuttcp.dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
+    def reset_ports(self, begin_port, max_ports):
+        with nuttcp.port_lock:
+            nuttcp.cports = list(range(begin_port, begin_port + max_ports))
+            nuttcp.dports = list(range(begin_port + 1000, begin_port + max_ports + 1000))
 
     def run_sender(self, srcfile, **optional_args):
         time_start = time.time()
-        with self.port_lock:
+        with nuttcp.port_lock:
             cport = nuttcp.cports.pop()
             dport = nuttcp.dports.pop()
         logging.debug('running nuttcp server on cport {} file {} dport {}'.format(cport, srcfile, dport))
@@ -106,10 +107,10 @@ class nuttcp(TransferTools):
             cmd = ['nuttcp', '-r', '-i1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', f'-T{duration}', '-fparse', '--nofork', address]
             logging.debug(str(cmd))
             # PIPE stdout so we can keep the output for size calculations later
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if 'numa_node' in optional_args:
                 super().bind_proc_to_numa(proc, optional_args['numa_node'])
-            nuttcp.running_cli_threads[cport] = [proc, dport, time_start]
+            nuttcp.running_cli_threads[cport] = [proc, address, dstfile, optional_args, time_start]
             return {'cport' : cport, 'dport': dport, 'result': True}
 
         else:
@@ -137,27 +138,28 @@ class nuttcp(TransferTools):
             if compression:
                 cmd.extend([f' | {compression} -d > {dstfile}'])
                 logging.debug(str(cmd))
-                proc = subprocess.Popen(' '.join(cmd), shell=True, stderr=sys.stderr)
+                proc = subprocess.Popen(' '.join(cmd), shell=True, stderr=subprocess.PIPE)
             else:
                 logging.debug(str(cmd))
                 with open(dstfile, 'wb') as file:
-                    proc = subprocess.Popen(cmd, stdout=file, stderr=sys.stderr)
+                    proc = subprocess.Popen(cmd, stdout=file, stderr=subprocess.PIPE)
 
             if 'numa_node' in optional_args:
                 super().bind_proc_to_numa(proc, optional_args['numa_node'])
-            nuttcp.running_cli_threads[cport] = [proc, dport, time_start]
+            nuttcp.running_cli_threads[cport] = [proc, address, dstfile, optional_args, time_start]
             return {'cport' : cport, 'dport': dport, 'result': True}
 
     @classmethod
     def free_port(cls, port, **optional_args):
         threads = nuttcp.running_svr_threads
-        err_thread = threads.pop(port)
+        err_thread = threads[port]
         err_thread[0].kill()
         err_thread[0].kill()
         err_thread[0].communicate()
         with nuttcp.port_lock:
             nuttcp.cports.append(port)
             nuttcp.dports.append(err_thread[1])
+            del threads[port]
 
     @classmethod
     def poll_progress(cls, **optional_args):
@@ -194,8 +196,8 @@ class nuttcp(TransferTools):
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
             # logging.debug('threads: ' + str(threads))
-            try:                
-                proc = nuttcp.running_cli_threads[cport][0]
+            try:
+                proc, address, dstfile, optargs, tstart = nuttcp.running_cli_threads[cport]
                 out, err = proc.communicate(timeout=timeout)
                 completed_thread = threads.pop(cport)
                 if optional_args['dstfile'] == None:
@@ -210,7 +212,25 @@ class nuttcp(TransferTools):
                         return proc.returncode, None
                     # return with bytes transferred
                     return proc.returncode, (int(float(transfer_stats.get('megabytes', '0.0'))) * 1024 * 1024)
-                else:    
+                else:
+                    # if connrefused, there's a good chance that the sender was not set up in time - try again
+                    if proc.returncode == 1 and (err and b"errno=111" in err):
+                        if nuttcp.receiver_retries.get(cport):
+                            nuttcp.receiver_retries[cport] += 1
+                        else:
+                            nuttcp.receiver_retries[cport] = 1
+                        if nuttcp.receiver_retries[cport] > 4:
+                            # too many retries, fail out
+                            logging.debug(f"too many retries, fail on {cport} {optional_args['dstfile']}")
+                            return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
+                        else:
+                            logging.debug(f"retry (connrefused) {cport} {optional_args['dstfile']}")
+                            # put cport back and try again
+                            optional_args['cport'] = cport
+                            nuttcp.run_receiver(cls, address, dstfile, **optargs)
+                            return nuttcp.poll_progress(**optional_args)
+                    elif nuttcp.receiver_retries.get(cport):
+                        del nuttcp.receiver_retries[cport]
                     return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
             except subprocess.TimeoutExpired:
                 err_thread = threads.pop(cport)
@@ -239,7 +259,4 @@ class nuttcp(TransferTools):
             j[0].communicate()
 
         nuttcp.running_cli_threads = {}
-        cls.reset_ports(cls, nuttcp_port = optional_args['nuttcp_port'])
-
-        # nuttcp.cports = list(range(nuttcp_port, nuttcp_port+ 999))
-        # nuttcp.dports = list(range(nuttcp_port + 1000, nuttcp_port + 1999))
+        cls.reset_ports(cls, optional_args.get('nuttcp_port', nuttcp.cports[0]), optional_args.get('max_ports', len(nuttcp.cports)))
