@@ -224,8 +224,12 @@ def generate_token():
 def authorize(f):
     @wraps(f)
     def check_orchestrator_token(*args, **kwargs):
-        if not request.headers.get('Authorization') and not app.config.get('SKIP_TOKEN_AUTH'):
-            abort(401)
+        if not request.headers.get('Authorization'):
+            if not app.config.get('SKIP_TOKEN_AUTH', False):
+                abort(401)
+            else:
+                # shortcut JWT decoding
+                return f(*args, **kwargs)
         user = None
         try:
             jwtdata = request.headers['Authorization']

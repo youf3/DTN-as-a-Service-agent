@@ -1,10 +1,15 @@
 from abc import ABC, abstractmethod
-import numa
+
 from libs.Schemes import NumaScheme
 import itertools
 import os
 import psutil
 import signal
+# optional import
+try:
+    import numa
+except:
+    numa = None
 
 class TransferTimeout(Exception):
     def __init__(self, msg, file):
@@ -45,19 +50,23 @@ class TransferTools(ABC):
         pass
 
     def bind_proc_to_numa(self, proc, numa_num):
-        if self.numa_scheme == NumaScheme.OS_CONTROLLED or not numa.available(): return
+        if self.numa_scheme == NumaScheme.OS_CONTROLLED or numa is None or not numa.available():
+            return
         else: 
             cores_to_bind = self.get_cpu(numa_num)
             os.sched_setaffinity(proc.pid, cores_to_bind)
 
     def get_cpu(self, numa_num):
+        if numa is None:
+            raise Exception('Numa module not available')
         if self.numa_scheme == NumaScheme.BIND_TO_NUMA:
             return numa.node_to_cpus(numa_num)
         elif self.numa_scheme == NumaScheme.BIND_TO_CORE:
             if TransferTools.local_cpu_iterator == None:
                 TransferTools.local_cpu_iterator = itertools.cycle(numa.node_to_cpus(numa_num))
             return TransferTools.local_cpu_iterator.next()
-        else: raise Exception('Incorrect Numa Affinity Scheme')
+        else:
+            raise Exception('Incorrect Numa Affinity Scheme')
         
     def kill_proc_tree(pid, sig=signal.SIGTERM, include_parent=True,
                    timeout=None, on_terminate=None):
