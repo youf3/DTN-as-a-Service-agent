@@ -3,7 +3,7 @@ import stat
 import logging
 import subprocess
 import traceback
-import ping3
+from icmplib import ping
 from pathlib import Path
 from multiprocessing import Value, Array, Manager
 from ctypes import c_bool
@@ -379,7 +379,10 @@ def check_running():
 #@authorize
 def ping_host(dst_ip):
     logging.debug('pinging {}'.format(dst_ip))
-    delay = ping3.ping(dst_ip)
+    result = ping(dst_ip, count=1, privileged=False)
+    if not result or result.avg_rtt == 0:
+        return {'latency': None}
+    delay = result.avg_rtt / 1000
     logging.debug('latency {}'.format(delay))
     return {'latency' : delay}
 
