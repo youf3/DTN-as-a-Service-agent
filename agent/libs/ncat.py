@@ -19,13 +19,19 @@ class ncat(TransferTools):
     def run_sender(self, srcfile, **optional_args):
         cport = ncat.cports.pop()
         logging.debug('running ncat server on cport {} file {}'.format(cport, srcfile))
-        logging.debug('args {}'.format(optional_args))
-        
+
+        if 'ipv6' in optional_args:
+            ipv6 = bool(optional_args['ipv6'])
+        else:
+            ipv6 = False
+
         if srcfile is None:            
             duration = optional_args['duration']
 
             cmd = ['timeout', f'{duration}', 'ncat', '-l', '--send-only', f'{cport}']
-            logging.debug(str(cmd))
+            if ipv6:
+                cmd.insert(3, '-6')
+            logging.debug(' '.join(cmd))
             proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
             ncat.running_svr_threads[cport] = [proc, srcfile]
             if 'numa_node' in optional_args:
@@ -34,7 +40,9 @@ class ncat(TransferTools):
 
         else:
             cmd = ['ncat', '-l', '--send-only', f'{cport}']
-            logging.debug(str(cmd))
+            if ipv6:
+                cmd.insert(1, '-6')
+            logging.debug(' '.join(cmd))
             with open(srcfile, 'rb') as file:
                 proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
                 ncat.running_svr_threads[cport] = [proc, srcfile]

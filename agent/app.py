@@ -7,7 +7,7 @@ from icmplib import ping
 from pathlib import Path
 from multiprocessing import Value, Array, Manager
 from ctypes import c_bool
-from libs.TransferTools import TransferTools, TransferTimeout
+from libs.TransferTools import TransferTools, TransferTimeout, TransferProcessing
 from libs.NVME import Port, CFSNotFound
 # import Diskmanager.py for NVMEoF functions
 from libs.DiskManager import disk_manager
@@ -405,14 +405,16 @@ def poll(tool):
 
     target_module = [x for x in loaded_modules if tool in x]    
     target_tool_cls = getattr(loaded_modules[target_module[0]], tool)    
-    try:        
+    try:
         retcode = target_tool_cls.poll_progress(**data)
         return jsonify(retcode)
+    except TransferProcessing as e:
+        abort(make_response(jsonify(message="transfer still in progress"), 503))
     except TransferTimeout as e:        
-            filepath = os.path.relpath(e.file, app.config['FILE_LOC'])
-            abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1], file = filepath), 400))
+        filepath = os.path.relpath(e.file, app.config['FILE_LOC'])
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1], file = filepath), 400))
     except Exception:
-            abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
 
 @app.route('/sender/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',
@@ -467,7 +469,7 @@ def run_receiver(tool):
             abort(make_response(jsonify(message="Mem-to-mem transfer requires duration"), 404))
     else:
         filename = os.path.join(app.config['FILE_LOC'], data.pop('file'))    
-        
+
     address = data.pop('address')    
 
     # find the module for a tool and instantiate it
@@ -484,7 +486,8 @@ def run_receiver(tool):
 
     try:
         ret = tool_obj.run_receiver(address, filename, **data)
-    except Exception:
+    except Exception as e:
+        logging.error(f"receiver startup error: {str(e)}")
         abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
     
     return jsonify(ret)

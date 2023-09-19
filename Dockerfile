@@ -13,4 +13,4 @@ EXPOSE 5000
 # runtime environment vars
 ENV LOG_LEVEL="info"
 
-ENTRYPOINT ["gunicorn", "-w", "1", "--threads", "4", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "--access-logformat", "%(h)s %(t)s \"%(r)s\" %(s)s %(b)s %(M)s", "app:app"]
+ENTRYPOINT ["gunicorn", "-w", "1", "--threads", "16", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "--access-logformat", "%(h)s %(t)s \"%(r)s\" %(s)s %(b)s %(M)s", "app:app"]

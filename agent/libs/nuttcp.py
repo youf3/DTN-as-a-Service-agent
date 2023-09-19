@@ -1,10 +1,11 @@
-from libs.TransferTools import TransferTools, TransferTimeout
+from libs.TransferTools import TransferTools, TransferTimeout, TransferProcessing
 import subprocess
 import logging
 import sys, os, time, re
 from threading import Lock
 
 class nuttcp(TransferTools):
+    NONBLOCKING_TIMEOUT = 3
     running_svr_threads = {}
     running_cli_threads = {}
     receiver_retries = {}
@@ -30,16 +31,22 @@ class nuttcp(TransferTools):
             cport = nuttcp.cports.pop()
             dport = nuttcp.dports.pop()
         logging.debug('running nuttcp server on cport {} file {} dport {}'.format(cport, srcfile, dport))
-        
+
+        if 'ipv6' in optional_args:
+            ipv6 = bool(optional_args['ipv6'])
+        else:
+            ipv6 = False
+
         if srcfile is None:            
-            
             if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
                 blocksize = optional_args['blocksize']
             else:
                 blocksize = 8192
 
             cmd = ['nuttcp', '-S', '-1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', '--nofork']
-            logging.debug(str(cmd))
+            if ipv6:
+                cmd.insert(1, '-6')
+            logging.debug(' '.join(cmd))
             proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
             nuttcp.running_svr_threads[cport] = [proc, dport, srcfile, time_start]
             if 'numa_node' in optional_args:
@@ -65,15 +72,17 @@ class nuttcp(TransferTools):
                 compression = None
 
             cmd = ['nuttcp', '-S', '-b', '-1', f'-P{cport}', f'-p{dport}', filemode, f'-l{blocksize}k', '--nofork']
+            if ipv6:
+                cmd.insert(1, '-6')
 
             if compression:
                 # must use shell mode with subprocess
                 cmd = [f'({compression} |'] + cmd + [f') < {srcfile}']
-                logging.debug(str(cmd))
+                logging.debug(' '.join(cmd))
                 proc = subprocess.Popen(' '.join(cmd), stderr=sys.stderr, shell=True)
             else:
                 # no shell mode, take advantage of performance improvements
-                logging.debug(str(cmd))
+                logging.debug(' '.join(cmd))
                 with open(srcfile, 'rb') as file:
                     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
 
@@ -105,7 +114,7 @@ class nuttcp(TransferTools):
             dport = optional_args['dport']
             logging.debug('running nuttcp mem-to-mem client on cport {} dport {}'.format(cport, dport))
             cmd = ['nuttcp', '-r', '-i1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', f'-T{duration}', '-fparse', '--nofork', address]
-            logging.debug(str(cmd))
+            logging.debug(' '.join(cmd))
             # PIPE stdout so we can keep the output for size calculations later
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if 'numa_node' in optional_args:
@@ -137,10 +146,10 @@ class nuttcp(TransferTools):
 
             if compression:
                 cmd.extend([f' | {compression} -d > {dstfile}'])
-                logging.debug(str(cmd))
+                logging.debug(' '.join(cmd))
                 proc = subprocess.Popen(' '.join(cmd), shell=True, stderr=subprocess.PIPE)
             else:
-                logging.debug(str(cmd))
+                logging.debug(' '.join(cmd))
                 with open(dstfile, 'wb') as file:
                     proc = subprocess.Popen(cmd, stdout=file, stderr=subprocess.PIPE)
 
@@ -178,8 +187,7 @@ class nuttcp(TransferTools):
         cport = optional_args.pop('cport')        
         
         if optional_args['node'] == 'sender':
-            threads = nuttcp.running_svr_threads
-            # logging.debug('threads: ' + str(threads))            
+            threads = nuttcp.running_svr_threads       
             proc = threads[cport][0]
             try:
                 proc.communicate(timeout=timeout)
@@ -195,11 +203,33 @@ class nuttcp(TransferTools):
                 raise TransferTimeout('sender timed out on port %s' % cport, filepath)
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
-            # logging.debug('threads: ' + str(threads))
+            if not timeout:
+                # set a timeout so we don't block receiver requests with polls
+                timeout = nuttcp.NONBLOCKING_TIMEOUT
             try:
                 proc, address, dstfile, optargs, tstart = nuttcp.running_cli_threads[cport]
                 out, err = proc.communicate(timeout=timeout)
                 completed_thread = threads.pop(cport)
+
+                # if connrefused, there's a good chance that the sender was not set up in time - try again
+                if proc.returncode == 1 and (err and b"errno=111" in err):
+                    if nuttcp.receiver_retries.get(cport):
+                        nuttcp.receiver_retries[cport] += 1
+                    else:
+                        nuttcp.receiver_retries[cport] = 1
+                    if nuttcp.receiver_retries[cport] > 4:
+                        # too many retries, fail out
+                        logging.debug(f"too many retries, fail on {cport} {optional_args['dstfile']}")
+                        return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
+                    else:
+                        logging.debug(f"retry (connrefused) {cport} {optional_args['dstfile']}")
+                        # put cport back and try again
+                        optional_args['cport'] = cport
+                        nuttcp.run_receiver(cls, address, dstfile, **optargs)
+                        return nuttcp.poll_progress(**optional_args)
+                elif nuttcp.receiver_retries.get(cport):
+                    del nuttcp.receiver_retries[cport]
+
                 if optional_args['dstfile'] == None:
                     # attempt to parse number of megabytes sent during the mem-mem test
                     if not out or b'megabytes' not in out:
@@ -213,33 +243,21 @@ class nuttcp(TransferTools):
                     # return with bytes transferred
                     return proc.returncode, (int(float(transfer_stats.get('megabytes', '0.0'))) * 1024 * 1024)
                 else:
-                    # if connrefused, there's a good chance that the sender was not set up in time - try again
-                    if proc.returncode == 1 and (err and b"errno=111" in err):
-                        if nuttcp.receiver_retries.get(cport):
-                            nuttcp.receiver_retries[cport] += 1
-                        else:
-                            nuttcp.receiver_retries[cport] = 1
-                        if nuttcp.receiver_retries[cport] > 4:
-                            # too many retries, fail out
-                            logging.debug(f"too many retries, fail on {cport} {optional_args['dstfile']}")
-                            return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
-                        else:
-                            logging.debug(f"retry (connrefused) {cport} {optional_args['dstfile']}")
-                            # put cport back and try again
-                            optional_args['cport'] = cport
-                            nuttcp.run_receiver(cls, address, dstfile, **optargs)
-                            return nuttcp.poll_progress(**optional_args)
-                    elif nuttcp.receiver_retries.get(cport):
-                        del nuttcp.receiver_retries[cport]
                     return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
             except subprocess.TimeoutExpired:
-                err_thread = threads.pop(cport)
-                err_thread[0].kill()
-                err_thread[0].kill()
-                err_thread[0].communicate()                
-                logging.error('receiver timed out on port %s' % cport)
-                raise Exception('receiver timed out on port %s' % cport)
-            
+                # don't raise a generic exception - very possible that the transfer is still ongoing
+                #
+                # usually transfer will fail with a connection refused, connection timeout, etc.
+                # that will not get caught by this exception
+                #logging.debug(f"transfer on port {cport} still in progress")
+                raise TransferProcessing("still transferring", optional_args.get('dstfile', ''))
+
+                # err_thread = threads.pop(cport)
+                # err_thread[0].kill()
+                # err_thread[0].kill()
+                # err_thread[0].communicate()                
+                # logging.error('receiver timed out on port %s' % cport)
+                # raise Exception('receiver timed out on port %s' % cport)
         else:
             logging.error('Node has to be either sender or receiver')
             raise Exception('Node has to be either sender or receiver')        
