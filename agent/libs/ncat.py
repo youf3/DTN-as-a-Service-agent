@@ -1,9 +1,10 @@
-from libs.TransferTools import TransferTools, TransferTimeout
+from libs.TransferTools import TransferTools, TransferTimeout, TransferProcessing
 import subprocess
 import logging
 import sys, os, time
 
 class ncat(TransferTools):
+    NONBLOCKING_TIMEOUT = 3
     running_svr_threads = {}
     running_cli_threads = {}
     cports = []
@@ -32,22 +33,35 @@ class ncat(TransferTools):
             if ipv6:
                 cmd.insert(3, '-6')
             logging.debug(' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
-            ncat.running_svr_threads[cport] = [proc, srcfile]
-            if 'numa_node' in optional_args:
-                super().bind_proc_to_numa(proc, optional_args['numa_node'])
-            return {'cport' : cport, 'result': True}
-
-        else:
-            cmd = ['ncat', '-l', '--send-only', f'{cport}']
-            if ipv6:
-                cmd.insert(1, '-6')
-            logging.debug(' '.join(cmd))
-            with open(srcfile, 'rb') as file:
-                proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
+            with open("/dev/zero", "rb", 0) as zero:
+                proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr, stdin=zero)
                 ncat.running_svr_threads[cport] = [proc, srcfile]
                 if 'numa_node' in optional_args:
                     super().bind_proc_to_numa(proc, optional_args['numa_node'])
+            return {'cport' : cport, 'result': True}
+
+        else:
+            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+                compression = optional_args['compression'].lower()
+            else:
+                compression = None
+
+            cmd = ['ncat', '-l', '--send-only', f'{cport}']
+            if ipv6:
+                cmd.insert(1, '-6')
+
+            if compression:
+                cmd = [f'({compression} |'] + cmd + [f') < {srcfile}']
+                logging.debug(' '.join(cmd))
+                proc = subprocess.Popen(' '.join(cmd), stderr=sys.stderr, shell=True)
+            else:
+                logging.debug(' '.join(cmd))
+                with open(srcfile, 'rb') as file:
+                    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr, stdin=file)
+
+            ncat.running_svr_threads[cport] = [proc, srcfile]
+            if 'numa_node' in optional_args:
+                super().bind_proc_to_numa(proc, optional_args['numa_node'])
             return {'cport' : cport, 'size' : os.path.getsize(srcfile), 'result': True}
 
     def run_receiver(self, address, dstfile, **optional_args):
@@ -55,31 +69,40 @@ class ncat(TransferTools):
             logging.error('cport number not found')
             raise Exception('Control port not found')
         
-        #logging.debug('running nuttcp receiver on address {} file {} cport {} dport {}'.format(address, dstfile, optional_args['cport'], optional_args['dport']))        
-
         if dstfile is None:
             cport = optional_args['cport']
             logging.debug('running ncat mem-to-mem client on cport {}'.format(cport))
-            logging.debug('args {}'.format(optional_args))
-            cmd = ['nc', '--recv-only', address, f'{cport}']
-            logging.debug(str(cmd))
-            proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+
+            # use dd so we can report number of bytes going through
+            cmd = ['ncat', '--recv-only', address, f'{cport}', '|', 'dd', '>', '/dev/null']
+            logging.debug(' '.join(cmd))
+            proc = subprocess.Popen(' '.join(cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if 'numa_node' in optional_args:
                 super().bind_proc_to_numa(proc, optional_args['numa_node'])
             ncat.running_cli_threads[cport] = [proc]
             return {'cport' : cport, 'result': True}
-
         else:
+            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+                compression = optional_args['compression'].lower()
+            else:
+                compression = None
+
             cport = optional_args['cport']
             logging.debug('running ncat client on cport {} file {}'.format(cport, dstfile))
-            logging.debug('args {}'.format(optional_args))
             cmd = ['ncat', '--recv-only', address, f'{cport}']
-            logging.debug(str(cmd))
-            with open(dstfile, 'wb') as file:
-                proc = subprocess.Popen(cmd, stdout=file, stderr=sys.stderr)
-                if 'numa_node' in optional_args:
-                    super().bind_proc_to_numa(proc, optional_args['numa_node'])
-                ncat.running_cli_threads[cport] = [proc]
+            
+            if compression:
+                cmd.extend([f' | {compression} -d > {dstfile}'])
+                logging.debug(' '.join(cmd))
+                proc = subprocess.Popen(' '.join(cmd), shell=True, stderr=subprocess.PIPE)
+            else:
+                logging.debug(' '.join(cmd))
+                with open(dstfile, 'wb') as file:
+                    proc = subprocess.Popen(cmd, stdout=file, stderr=sys.stderr)
+
+            if 'numa_node' in optional_args:
+                super().bind_proc_to_numa(proc, optional_args['numa_node'])
+            ncat.running_cli_threads[cport] = [proc]
             return {'cport' : cport, 'result': True}
 
     @classmethod
@@ -108,13 +131,15 @@ class ncat(TransferTools):
         cport = optional_args.pop('cport')        
         
         if optional_args['node'] == 'sender':
-            threads = ncat.running_svr_threads
-            # logging.debug('threads: ' + str(threads))            
+            threads = ncat.running_svr_threads      
             proc = threads[cport][0]
             try:
                 proc.communicate(timeout=timeout)
                 completed_thread = threads.pop(cport)
                 ncat.cports.append(cport)
+                if optional_args['dstfile'] is None and proc.returncode == 124:
+                    # mem-to-mem test timed out successfully, error isn't actually 124
+                    return 0
                 return proc.returncode
             except subprocess.TimeoutExpired:
                 filepath = threads[cport][1]
@@ -123,22 +148,38 @@ class ncat(TransferTools):
                 raise TransferTimeout('sender timed out on port %s' % cport, filepath)
         elif optional_args['node'] == 'receiver':
             threads = ncat.running_cli_threads
-            # logging.debug('threads: ' + str(threads))
-            try:                
+            if not timeout:
+                # set a timeout so we don't block receiver requests with polls
+                timeout = ncat.NONBLOCKING_TIMEOUT
+            try:
                 proc = ncat.running_cli_threads[cport][0]
-                proc.communicate(timeout=timeout)
+                out, err = proc.communicate(timeout=timeout)
                 threads.pop(cport)
                 if optional_args['dstfile'] == None:
+                    # attempt to parse number of bytes sent during the mem-mem test
+                    if err and b'bytes' in err.splitlines()[-1]:
+                        try:
+                            num_bytes = int(err.splitlines()[-1].split()[0])
+                            return proc.returncode, num_bytes
+                        except:
+                            logging.debug("unable to parse mem-to-mem bytes", exc_info=True)
                     return proc.returncode, None
                 else:    
                     return proc.returncode, os.path.getsize(optional_args.pop('dstfile'))
             except subprocess.TimeoutExpired:
-                err_thread = threads.pop(cport)
-                err_thread[0].kill()
-                err_thread[0].kill()
-                err_thread[0].communicate()                
-                logging.error('receiver timed out on port %s' % cport)
-                raise Exception('receiver timed out on port %s' % cport)
+                # don't raise a generic exception - very possible that the transfer is still ongoing
+                #
+                # usually transfer will fail with a connection refused, connection timeout, etc.
+                # that will not get caught by this exception
+                #logging.debug(f"transfer on port {cport} still in progress")
+                raise TransferProcessing("still transferring", optional_args.get('dstfile', ''))
+
+                # err_thread = threads.pop(cport)
+                # err_thread[0].kill()
+                # err_thread[0].kill()
+                # err_thread[0].communicate()                
+                # logging.error('receiver timed out on port %s' % cport)
+                # raise Exception('receiver timed out on port %s' % cport)
             
         else:
             logging.error('Node has to be either sender or receiver')
