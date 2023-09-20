@@ -5,6 +5,7 @@ import sys, os, time
 
 class ncat(TransferTools):
     NONBLOCKING_TIMEOUT = 3
+    SUPPORTED_COMPRESSION = ['bzip2', 'gzip', 'lzma']
     running_svr_threads = {}
     running_cli_threads = {}
     cports = []
@@ -41,8 +42,12 @@ class ncat(TransferTools):
             return {'cport' : cport, 'result': True}
 
         else:
-            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+            if ('compression' in optional_args and optional_args['compression']
+                and any(comp.startswith(optional_args['compression'].lower()) for comp in self.SUPPORTED_COMPRESSION)):
                 compression = optional_args['compression'].lower()
+                # avoid arbitrary command execution
+                if '&' in compression or ';' in compression:
+                    compression = None
             else:
                 compression = None
 
@@ -82,8 +87,12 @@ class ncat(TransferTools):
             ncat.running_cli_threads[cport] = [proc]
             return {'cport' : cport, 'result': True}
         else:
-            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+            if ('compression' in optional_args and optional_args['compression']
+                and any(comp.startswith(optional_args['compression'].lower()) for comp in self.SUPPORTED_COMPRESSION)):
                 compression = optional_args['compression'].lower()
+                # avoid arbitrary command execution
+                if '&' in compression or ';' in compression:
+                    compression = None
             else:
                 compression = None
 
@@ -187,17 +196,20 @@ class ncat(TransferTools):
 
     @classmethod
     def cleanup(cls, **optional_args):
-        for i,j in ncat.running_svr_threads.items():
+        for i,j in list(ncat.running_svr_threads.items()):
             j[0].kill()
             j[0].kill()
             j[0].communicate()
+            del ncat.running_svr_threads[i]
         
-        ncat.running_svr_threads = {}
+        # don't full reset running_svr_threads - this creates zombie processes
+        #ncat.running_svr_threads = {}
 
-        for i,j in ncat.running_cli_threads.items():
+        for i,j in list(ncat.running_cli_threads.items()):
             j[0].kill()
             j[0].kill()
             j[0].communicate()
+            del ncat.running_cli_threads[i]
 
-        ncat.running_cli_threads = {}
+        #ncat.running_cli_threads = {}
         cls.reset_ports(cls, optional_args.get('begin_port', ncat.cports[0]), optional_args.get('max_ports', 999))

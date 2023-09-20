@@ -6,6 +6,7 @@ from threading import Lock
 
 class nuttcp(TransferTools):
     NONBLOCKING_TIMEOUT = 3
+    SUPPORTED_COMPRESSION = ['bzip2', 'gzip', 'lzma']
     running_svr_threads = {}
     running_cli_threads = {}
     receiver_retries = {}
@@ -30,7 +31,8 @@ class nuttcp(TransferTools):
         with nuttcp.port_lock:
             cport = nuttcp.cports.pop()
             dport = nuttcp.dports.pop()
-        logging.debug('running nuttcp server on cport {} file {} dport {}'.format(cport, srcfile, dport))
+        #logging.debug(nuttcp.running_svr_threads.keys())
+        logging.debug(f"running nuttcp server on cport {cport} file {srcfile} dport {dport}")
 
         if 'ipv6' in optional_args:
             ipv6 = bool(optional_args['ipv6'])
@@ -66,8 +68,12 @@ class nuttcp(TransferTools):
             else:
                 blocksize = 8192
 
-            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+            if ('compression' in optional_args and optional_args['compression']
+                and any(comp.startswith(optional_args['compression'].lower()) for comp in self.SUPPORTED_COMPRESSION)):
                 compression = optional_args['compression'].lower()
+                # avoid arbitrary command execution
+                if '&' in compression or ';' in compression:
+                    compression = None
             else:
                 compression = None
 
@@ -101,7 +107,8 @@ class nuttcp(TransferTools):
             logging.error('dport number not found')
             raise Exception('Data port not found')
         
-        logging.debug('running nuttcp receiver on address {} file {} cport {} dport {}'.format(address, dstfile, optional_args['cport'], optional_args['dport']))
+        #logging.debug(nuttcp.running_cli_threads.keys())
+        logging.debug(f"running nuttcp receiver on address {address} file {dstfile} cport {optional_args['cport']} dport {optional_args['dport']}")
         if dstfile is None:
             
             if 'blocksize' in optional_args and type(optional_args['blocksize']) == int:
@@ -112,7 +119,7 @@ class nuttcp(TransferTools):
             duration = optional_args['duration']
             cport = optional_args['cport']
             dport = optional_args['dport']
-            logging.debug('running nuttcp mem-to-mem client on cport {} dport {}'.format(cport, dport))
+            logging.debug(f"running nuttcp mem-to-mem client on cport {cport} dport {dport}")
             cmd = ['nuttcp', '-r', '-i1', f'-P{cport}', f'-p{dport}', f'-l{blocksize}k', f'-T{duration}', '-fparse', '--nofork', address]
             logging.debug(' '.join(cmd))
             # PIPE stdout so we can keep the output for size calculations later
@@ -135,8 +142,12 @@ class nuttcp(TransferTools):
             else:
                 blocksize = 8192
 
-            if 'compression' in optional_args and optional_args['compression'] and optional_args['compression'].lower() in ['bzip2', 'gzip', 'lzma']:
+            if ('compression' in optional_args and optional_args['compression']
+                and any(comp.startswith(optional_args['compression'].lower()) for comp in self.SUPPORTED_COMPRESSION)):
                 compression = optional_args['compression'].lower()
+                # avoid arbitrary command execution
+                if '&' in compression or ';' in compression:
+                    compression = None
             else:
                 compression = None
 
@@ -191,6 +202,9 @@ class nuttcp(TransferTools):
             proc = threads[cport][0]
             try:
                 proc.communicate(timeout=timeout)
+                if proc.returncode != 0:
+                    logging.warn(f"nuttcp had nonzero exit on {cport} {threads[cport][2]}")
+
                 with nuttcp.port_lock:
                     completed_thread = threads.pop(cport)
                     nuttcp.cports.append(cport)
@@ -203,12 +217,10 @@ class nuttcp(TransferTools):
                 raise TransferTimeout('sender timed out on port %s' % cport, filepath)
         elif optional_args['node'] == 'receiver':
             threads = nuttcp.running_cli_threads
-            if not timeout:
-                # set a timeout so we don't block receiver requests with polls
-                timeout = nuttcp.NONBLOCKING_TIMEOUT
             try:
                 proc, address, dstfile, optargs, tstart = nuttcp.running_cli_threads[cport]
-                out, err = proc.communicate(timeout=timeout)
+                # set a timeout so we don't block receiver requests with polls
+                out, err = proc.communicate(timeout=nuttcp.NONBLOCKING_TIMEOUT)
                 completed_thread = threads.pop(cport)
 
                 # if connrefused, there's a good chance that the sender was not set up in time - try again
@@ -228,7 +240,12 @@ class nuttcp(TransferTools):
                         nuttcp.run_receiver(cls, address, dstfile, **optargs)
                         return nuttcp.poll_progress(**optional_args)
                 elif nuttcp.receiver_retries.get(cport):
+                    # no quick retry errors, remove retries
                     del nuttcp.receiver_retries[cport]
+
+                if proc.returncode != 0:
+                    logging.warn(f"nuttcp had nonzero exit ({proc.returncode}) on "
+                                 f"{cport} {optional_args['dstfile']}: {out.splitlines()[-1]}, {err}")
 
                 if optional_args['dstfile'] == None:
                     # attempt to parse number of megabytes sent during the mem-mem test
@@ -264,17 +281,25 @@ class nuttcp(TransferTools):
 
     @classmethod
     def cleanup(cls, **optional_args):
-        for i,j in nuttcp.running_svr_threads.items():
+        for i,j in list(nuttcp.running_svr_threads.items()):
             j[0].kill()
             j[0].kill()
             j[0].communicate()
-        
-        nuttcp.running_svr_threads = {}
+            with nuttcp.port_lock:
+                if i not in nuttcp.cports:
+                    nuttcp.cports.append(i)
+                if j[1] not in nuttcp.dports:
+                    nuttcp.dports.append(j[1])
+            del nuttcp.running_svr_threads[i]
 
-        for i,j in nuttcp.running_cli_threads.items():
+        # don't full reset running_svr_threads - this creates zombie processes
+        #nuttcp.running_svr_threads = {}
+
+        for i,j in list(nuttcp.running_cli_threads.items()):
             j[0].kill()
             j[0].kill()
             j[0].communicate()
+            del nuttcp.running_cli_threads[i]
 
-        nuttcp.running_cli_threads = {}
-        cls.reset_ports(cls, optional_args.get('nuttcp_port', nuttcp.cports[0]), optional_args.get('max_ports', len(nuttcp.cports)))
+        #nuttcp.running_cli_threads = {}
+        #cls.reset_ports(cls, optional_args.get('nuttcp_port', nuttcp.cports[0]), optional_args.get('max_ports', len(nuttcp.cports)))
