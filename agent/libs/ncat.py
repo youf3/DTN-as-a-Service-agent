@@ -43,7 +43,7 @@ class ncat(TransferTools):
 
         else:
             if ('compression' in optional_args and optional_args['compression']
-                and any(comp.startswith(optional_args['compression'].lower()) for comp in self.SUPPORTED_COMPRESSION)):
+                and any(optional_args['compression'].lower().startswith(comp) for comp in self.SUPPORTED_COMPRESSION)):
                 compression = optional_args['compression'].lower()
                 # avoid arbitrary command execution
                 if '&' in compression or ';' in compression:
@@ -88,7 +88,7 @@ class ncat(TransferTools):
             return {'cport' : cport, 'result': True}
         else:
             if ('compression' in optional_args and optional_args['compression']
-                and any(comp.startswith(optional_args['compression'].lower()) for comp in self.SUPPORTED_COMPRESSION)):
+                and any(optional_args['compression'].lower().startswith(comp) for comp in self.SUPPORTED_COMPRESSION)):
                 compression = optional_args['compression'].lower()
                 # avoid arbitrary command execution
                 if '&' in compression or ';' in compression:
