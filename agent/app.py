@@ -322,8 +322,7 @@ def create_dir():
 
     for i in dirs:
         dirpath = os.path.join(app.config['FILE_LOC'] , i)
-        if not os.path.exists(dirpath):
-            os.makedirs(dirpath)    
+        os.makedirs(dirpath, exist_ok=True)
     return ''
 
 @app.route('/file/<path:path>', methods=['DELETE'])
@@ -412,9 +411,9 @@ def poll(tool):
         abort(make_response(jsonify(message="transfer still in progress"), 503))
     except TransferTimeout as e:        
         filepath = os.path.relpath(e.file, app.config['FILE_LOC'])
-        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1], file = filepath), 400))
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0), file = filepath), 400))
     except Exception:
-        abort(make_response(jsonify(message=traceback.format_exc(limit=0).splitlines()[1]), 400))
+        abort(make_response(jsonify(message=traceback.format_exc(limit=0)), 400))
 
 @app.route('/sender/<string:tool>', methods=['POST'])
 @metrics.counter('daas_agent_sender', 'Number of sender created',

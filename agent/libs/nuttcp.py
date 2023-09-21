@@ -245,7 +245,7 @@ class nuttcp(TransferTools):
 
                 if proc.returncode != 0:
                     logging.warn(f"nuttcp had nonzero exit ({proc.returncode}) on "
-                                 f"{cport} {optional_args['dstfile']}: {out.splitlines()[-1]}, {err}")
+                                 f"{cport} {optional_args['dstfile']}: {(out.splitlines()[-1] if out else '')}, {err}")
 
                 if optional_args['dstfile'] == None:
                     # attempt to parse number of megabytes sent during the mem-mem test
